@@ -1,0 +1,52 @@
+# =============== Unity generated folders ================
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Mm]asterServer/
+/[Uu]serSettings/
+/[Aa]ssets/AssetStoreTools/
+
+# =============== Visual Studio / Rider / VS Code ================
+.vs/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.nitroj
+*.log
+*.DS_Store # macOS specific
+*.meta # Generally you want to keep .meta files, but if you have issues, sometimes ignoring them helps.
+*.pdb
+*.opendb
+
+# ================ Other generated files ===================
+# Packages
+/Packages/manifest.json
+/Packages/packages-lock.json
+
+# Local preferences
+ProjectSettings/
+Assets/Plugins/
+Assets/AssetStoreTools/
+
+# ================ Optional ===================
+# Crash reports
+*.crash
+
+# Cache files
+*.cache
+
+# For example, if you use a specific plugin that generates large files
+# /Assets/MyPluginData/ß
+
+
+#================== Photon Fusion ==============
+# Photon App ID を含む設定ファイルを無視
+Assets/Photon/PhotonUnityNetworking/Resources/PhotonServerSettings.asset
+Assets/Photon/Fusion/Resources/FusionAppSettings.asset
