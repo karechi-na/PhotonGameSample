@@ -11,6 +11,8 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
     private NetworkRunner networkRunnerPrefab;
     [SerializeField]
     private NetworkPrefabRef playerAvatarPrefab;
+    [SerializeField]
+    private NetworkPrefabRef itemPrefab;
 
     private async void Start()
     {
@@ -34,10 +36,16 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
             var rand = UnityEngine.Random.insideUnitCircle * 5f;
             var spawnPosition = new Vector3(rand.x, 2f, rand.y);
             // 自分自身のアバターをスポーンする
-           runner.Spawn(playerAvatarPrefab, spawnPosition, Quaternion.identity, onBeforeSpawned: (_, networkObject) => {
-               // プレイヤー名のネットワークプロパティの初期値として、ランダムな名前を設定する
-               networkObject.GetComponent<PlayerAvatar>().NickName = $"Player{UnityEngine.Random.Range(0, 10000)}";
-           });
+            runner.Spawn(playerAvatarPrefab, spawnPosition, Quaternion.identity, onBeforeSpawned: (_, networkObject) =>
+            {
+                // プレイヤー名のネットワークプロパティの初期値として、ランダムな名前を設定する
+                networkObject.GetComponent<PlayerAvatar>().NickName = $"Player{UnityEngine.Random.Range(0, 10000)}";
+            });
+            // マスタークライアント（ホスト）のみアイテムをスポーン
+            if (runner.IsSharedModeMasterClient)
+            {
+                runner.Spawn(itemPrefab, new Vector3(0.0f, 0.0f, 5.0f), Quaternion.identity);
+            }
         }
     }
     void INetworkRunnerCallbacks.OnPlayerLeft(NetworkRunner runner, PlayerRef player) { }

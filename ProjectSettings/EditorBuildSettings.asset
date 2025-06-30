@@ -6,8 +6,8 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/PhotonGameSample/PhotonTutorial.unity
-    guid: 34ea3ffc970e14f668270a199fd14320
+    path: Assets/PhotonGameSample/PhotonGameSample.unity
+    guid: 6dab3c59133f148259ec6455cc4ab6ce
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   m_UseUCBPForAssetBundles: 0

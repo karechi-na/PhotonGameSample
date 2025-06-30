@@ -442,6 +442,8 @@ MonoBehaviour:
   networkRunnerPrefab: {fileID: 342181917014128541, guid: c85f5d8887476472f8aef91ae857ae9d, type: 3}
   playerAvatarPrefab:
     RawGuidValue: 41e87f1b1a9234846bf578b3ec71a01a
+  itemPrefab:
+    RawGuidValue: 2c418fcf78a761f4e891fcedf46f997e
 --- !u!4 &674588594
 Transform:
   m_ObjectHideFlags: 0
@@ -719,7 +721,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 0.05, y: 0.05, z: 0.1}
+  m_LocalScale: {x: 0.125, y: 0.125, z: 0.125}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 1460743153}
