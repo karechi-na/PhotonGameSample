@@ -14,7 +14,10 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
 
     [SerializeField]
     private Vector3[] spawnPosition
-        = { new Vector3(-5, 2, 0), new Vector3(5, 2, 0), new Vector3(0, 2, 0) };
+        = { 
+            new Vector3(-5, 2, 0),
+            new Vector3(5, 2, 0),
+    };
     [SerializeField] private Quaternion spawnRotation = Quaternion.identity;
 
 
@@ -41,7 +44,7 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
         // セッションへ参加したプレイヤーが自分自身かどうかを判定する
         if (player == runner.LocalPlayer)
         {
-            // アバターの初期位置を計算する（半径5の円の内部のランダムな点）
+            // アバターの初期位置を計算する
             var playerIndex = runner.SessionInfo.PlayerCount - 1;
             var spawnedPosition = spawnPosition[playerIndex % spawnPosition.Length];
             // 自分自身のアバターをスポーンする
@@ -53,7 +56,8 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
             // マスタークライアント（ホスト）のみアイテムをスポーン
             if (runner.IsSharedModeMasterClient)
             {
-                runner.Spawn(itemPrefab, new Vector3(0.0f, 0.0f, 5.0f), Quaternion.identity);
+                var spawnd=runner.Spawn(itemPrefab, new Vector3(0.0f, 0.0f, 5.0f), Quaternion.identity);
+                Debug.Log($"Item Spawned:{spawnd}");
             }
         }
     }
