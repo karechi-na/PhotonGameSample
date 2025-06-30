@@ -11,6 +11,13 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
     private NetworkRunner networkRunnerPrefab;
     [SerializeField]
     private NetworkPrefabRef playerAvatarPrefab;
+
+    [SerializeField]
+    private Vector3[] spawnPosition
+        = { new Vector3(-5, 2, 0), new Vector3(5, 2, 0), new Vector3(0, 2, 0) };
+    [SerializeField] private Quaternion spawnRotation = Quaternion.identity;
+
+
     [SerializeField]
     private NetworkPrefabRef itemPrefab;
 
@@ -29,14 +36,16 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
     void INetworkRunnerCallbacks.OnObjectEnterAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player) { }
     void INetworkRunnerCallbacks.OnPlayerJoined(NetworkRunner runner, PlayerRef player)
     {
+
+
         // セッションへ参加したプレイヤーが自分自身かどうかを判定する
         if (player == runner.LocalPlayer)
         {
             // アバターの初期位置を計算する（半径5の円の内部のランダムな点）
-            var rand = UnityEngine.Random.insideUnitCircle * 5f;
-            var spawnPosition = new Vector3(rand.x, 2f, rand.y);
+            var playerIndex = runner.SessionInfo.PlayerCount - 1;
+            var spawnedPosition = spawnPosition[playerIndex % spawnPosition.Length];
             // 自分自身のアバターをスポーンする
-            runner.Spawn(playerAvatarPrefab, spawnPosition, Quaternion.identity, onBeforeSpawned: (_, networkObject) =>
+            runner.Spawn(playerAvatarPrefab, spawnedPosition, Quaternion.identity, onBeforeSpawned: (_, networkObject) =>
             {
                 // プレイヤー名のネットワークプロパティの初期値として、ランダムな名前を設定する
                 networkObject.GetComponent<PlayerAvatar>().NickName = $"Player{UnityEngine.Random.Range(0, 10000)}";
