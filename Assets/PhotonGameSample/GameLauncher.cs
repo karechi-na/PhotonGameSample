@@ -12,6 +12,10 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
     [SerializeField]
     private NetworkPrefabRef playerAvatarPrefab;
 
+    // イベント: マスタークライアントに参加したときに呼び出されるイベント
+    public event Action<NetworkRunner> OnJoinedMasterClient;
+    public event Action<NetworkRunner,PlayerRef> OnJoindClient;
+
     [SerializeField]
     private Vector3[] spawnPosition
         = { 
@@ -53,11 +57,15 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
                 // プレイヤー名のネットワークプロパティの初期値として、ランダムな名前を設定する
                 networkObject.GetComponent<PlayerAvatar>().NickName = $"Player{UnityEngine.Random.Range(0, 10000)}";
             });
-            // マスタークライアント（ホスト）のみアイテムをスポーン
+
+            // マスタークライアントのJoin時の処理を呼び出す
             if (runner.IsSharedModeMasterClient)
             {
-                var spawnd=runner.Spawn(itemPrefab, new Vector3(0.0f, 0.0f, 5.0f), Quaternion.identity);
-                Debug.Log($"Item Spawned:{spawnd}");
+                OnJoinedMasterClient?.Invoke(runner);
+            }
+            else
+            {
+                OnJoindClient?.Invoke(runner,player);
             }
         }
     }
