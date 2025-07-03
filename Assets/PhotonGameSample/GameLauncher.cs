@@ -13,8 +13,8 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
     private NetworkPrefabRef playerAvatarPrefab;
 
     // イベント: マスタークライアントに参加したときに呼び出されるイベント
-    public event Action<NetworkRunner> OnJoinedMasterClient;
-    public event Action<NetworkRunner,PlayerRef> OnJoindClient;
+    public event Action<NetworkRunner, int ,NetworkObject> OnJoinedMasterClient;
+    public event Action<NetworkRunner, int, NetworkObject> OnJoindClient;
 
     [SerializeField]
     private Vector3[] spawnPosition
@@ -52,20 +52,21 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
             var playerIndex = runner.SessionInfo.PlayerCount - 1;
             var spawnedPosition = spawnPosition[playerIndex % spawnPosition.Length];
             // 自分自身のアバターをスポーンする
-            runner.Spawn(playerAvatarPrefab, spawnedPosition, Quaternion.identity, onBeforeSpawned: (_, networkObject) =>
+            var spawndObject=runner.Spawn(playerAvatarPrefab, spawnedPosition, Quaternion.identity, onBeforeSpawned: (_, networkObject) =>
             {
                 // プレイヤー名のネットワークプロパティの初期値として、ランダムな名前を設定する
                 networkObject.GetComponent<PlayerAvatar>().NickName = $"Player{UnityEngine.Random.Range(0, 10000)}";
+                networkObject.GetComponent<PlayerAvatar>().playerId = playerIndex;
             });
 
             // マスタークライアントのJoin時の処理を呼び出す
             if (runner.IsSharedModeMasterClient)
             {
-                OnJoinedMasterClient?.Invoke(runner);
+                OnJoinedMasterClient?.Invoke(runner, playerIndex, spawndObject);
             }
             else
             {
-                OnJoindClient?.Invoke(runner,player);
+                OnJoindClient?.Invoke(runner, playerIndex, spawndObject);
             }
         }
     }

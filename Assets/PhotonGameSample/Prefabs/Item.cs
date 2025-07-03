@@ -43,4 +43,17 @@ public class Item : NetworkBehaviour    // ItemƒNƒ‰ƒX‚ÍNetworkBehaviour‚ğŒp³‚µ‚
         // ‚·‚×‚Ä‚ÌƒNƒ‰ƒCƒAƒ“ƒg‚Å“¯ŠúˆÊ’u‚ÉˆÚ“®
         transform.position = NetworkedPosition;
     }
+    void OnTriggerEnter(Collider other)
+    {
+        Debug.Log($"Item caught by {other.name}");
+
+        // ƒAƒCƒeƒ€‚ğƒLƒƒƒbƒ`‚µ‚½‚Æ‚«‚Ìˆ—
+        if (other.TryGetComponent(out ItemCatcher itemCatcher))
+        {
+            // ƒAƒCƒeƒ€ƒLƒƒƒbƒ`ƒƒ[‚ÌƒCƒxƒ“ƒg‚ğŒÄ‚Ño‚·
+            itemCatcher.ItemCaught?.Invoke(this, other.GetComponent<PlayerAvatar>());
+            // ƒAƒCƒeƒ€‚ğíœ
+            Runner.Despawn(Object);
+        }
+    }
 }

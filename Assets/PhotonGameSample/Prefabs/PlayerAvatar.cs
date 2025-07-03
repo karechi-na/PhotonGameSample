@@ -6,6 +6,7 @@ public class PlayerAvatar : NetworkBehaviour
     [Networked]
     public NetworkString<_16> NickName { get; set; }
 
+    [Networked]public int playerId { get; set; } = 0;
     private NetworkCharacterController characterController;
     private NetworkMecanimAnimator networkAnimator;
 

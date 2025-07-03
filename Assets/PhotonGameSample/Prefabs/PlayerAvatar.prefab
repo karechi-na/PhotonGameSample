@@ -125,6 +125,7 @@ GameObject:
   - component: {fileID: 2209292761432626022}
   - component: {fileID: 4742052467818878735}
   - component: {fileID: 3304530218209725375}
+  - component: {fileID: 4017780048919980028}
   m_Layer: 0
   m_Name: PlayerAvatar
   m_TagString: Player
@@ -232,6 +233,7 @@ MonoBehaviour:
     _length: 0
     _data:
       Data: 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+  _playerId: 0
 --- !u!114 &3304530218209725375
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -246,6 +248,18 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   cinemachineCamera: {fileID: 6576428711511453948}
   nameLabel: {fileID: 1490407381172634629}
+--- !u!114 &4017780048919980028
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6330943986583318938}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b6dc8550b9cc135468ec205d8360e205, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &6391349974324046671
 GameObject:
   m_ObjectHideFlags: 0
@@ -562,8 +576,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 7607851306457259715}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.20781337, y: -0.11232475, z: 0.02402982, w: 0.97140074}
-  m_LocalPosition: {x: 0.90891653, y: 1.7858124, z: -3.8776715}
+  m_LocalRotation: {x: 0.019282378, y: 0.2633097, z: -0.005264089, w: 0.9645043}
+  m_LocalPosition: {x: -1.2703239, y: 0.1, z: -2.1532016}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -646,7 +660,7 @@ MonoBehaviour:
     SplineCurvature: 0.5
   RecenteringTarget: 2
   HorizontalAxis:
-    Value: -13.191833
+    Value: 30.539383
     Center: 0
     Range: {x: -180, y: 180}
     Wrap: 1
@@ -656,7 +670,7 @@ MonoBehaviour:
       Time: 2
     Restrictions: 0
   VerticalAxis:
-    Value: 13.302503
+    Value: -10
     Center: 17.5
     Range: {x: -10, y: 45}
     Wrap: 0

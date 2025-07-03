@@ -1,6 +1,6 @@
 using UnityEngine;
 using Fusion;
-
+using TMPro;
 /// <summary>
 /// GameController is responsible for managing the game state and handling player interactions.
 /// </summary>
@@ -13,6 +13,7 @@ public class GameController: MonoBehaviour
     /// </summary>
     [SerializeField]private GameLauncher gameLauncher;
     [SerializeField]private ItemManager itemManager;
+    [SerializeField] private TextMeshProUGUI[] scoreText;
     /// <summary>
     /// GameState enum defines the possible states of the game.
     /// </summary>
@@ -44,6 +45,8 @@ public class GameController: MonoBehaviour
         }
     }
 
+    [SerializeField]private PlayerModel[] players = new PlayerModel[MAX_PLAYERS];
+
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Awake()
     {
@@ -51,21 +54,32 @@ public class GameController: MonoBehaviour
         gameLauncher.OnJoindClient += OnjoindClient;
     }
 
-    private void OnJoinedMasterClient(NetworkRunner runner)
+    private void OnJoinedMasterClient(NetworkRunner runner, int playerId,NetworkObject networkObject)
     {
         // マスタークライアントに参加したときの処理をここに記述します
         Debug.Log("CATCH Joined Master Client");
+        // マスタークライアントに参加したときにアイテムをスポーンする
         itemManager.SpawnItem(runner, 0);
+        players[playerId] = new PlayerModel(networkObject.GetComponent<PlayerAvatar>().NickName.ToString(), networkObject.gameObject);
+        networkObject.GetComponent<PlayerAvatar>().playerId = playerId;
+
+        players[playerId].OnScoreChanged += (score) =>
+        {
+            // スコアが変わったときの処理をここに記述します
+            scoreText[playerId].text = $"Player {playerId} Score: {score}";
+        };
+
     }
-    private void OnjoindClient(NetworkRunner runner, PlayerRef player)
+    private void OnjoindClient(NetworkRunner runner, int playerId, NetworkObject networkObject)
     {
         // クライアントに参加したときの処理をここに記述します
-        Debug.Log("CATCH Joined Client: " + player);
-        if (runner.IsSharedModeMasterClient)
+        players[playerId] = new PlayerModel(networkObject.GetComponent<PlayerAvatar>().NickName.ToString(), networkObject.gameObject);
+        players[playerId].OnScoreChanged += (score) =>
         {
-            // マスタークライアント（ホスト）のみアイテムをスポーン
-            itemManager.SpawnItem(runner, 0);
-        }
+            // スコアが変わったときの処理をここに記述します
+            scoreText[playerId].text = $"Player {playerId} Score: {score}";
+        };
+
     }
     private void OnChangeState(GameState newState)
     {
