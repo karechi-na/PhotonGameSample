@@ -101,4 +101,4 @@ InitTestScene*.unity*
 #================== Photon Fusion ==============
 # Photon App ID を含む設定ファイルを無視
 Assets/Photon/PhotonUnityNetworking/Resources/PhotonServerSettings.asset
-Assets/Photon/Fusion/Resources/FusionAppSettings.asset
+Assets/Photon/Fusion/Resources/PhotonAppSettings.asset
