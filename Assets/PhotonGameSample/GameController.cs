@@ -1,19 +1,26 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 using Fusion;
 using TMPro;
+using System.Collections.Generic;
 /// <summary>
 /// GameController is responsible for managing the game state and handling player interactions.
 /// </summary>
-public class GameController: MonoBehaviour
+public class GameController : MonoBehaviour
 {
     const int MAX_PLAYERS = 2; // Maximum number of players allowed in the game
 
     /// <summary>
     /// external references to GameLauncher and ItemManager components.
     /// </summary>
-    [SerializeField]private GameLauncher gameLauncher;
-    [SerializeField]private ItemManager itemManager;
+    [SerializeField] private GameLauncher gameLauncher;
+    [SerializeField] private ItemManager itemManager;
+
+    /// <summary>
+    /// PlayerModel array to hold player data.
+    /// </summary>
+    [SerializeField] private NetworkBehaviour PlayerModelPrefab;
     [SerializeField] private TextMeshProUGUI[] scoreText;
+    [SerializeField] private Dictionary<int, PlayerModel> playerModels; 
     /// <summary>
     /// GameState enum defines the possible states of the game.
     /// </summary>
@@ -24,7 +31,7 @@ public class GameController: MonoBehaviour
         GameOver
     }
 
-    private GameState currentGameState  = GameState.WaitingForPlayers;
+    private GameState currentGameState = GameState.WaitingForPlayers;
     public GameState CurrentGameState
     {
         get { return currentGameState; }
@@ -32,7 +39,7 @@ public class GameController: MonoBehaviour
         {
             if (currentGameState == value)
             {
-                // ó‘Ô‚ª•Ï‚í‚ç‚È‚¢ê‡‚Í‰½‚à‚µ‚È‚¢
+                // çŠ¶æ…‹ãŒå¤‰ã‚ã‚‰ãªã„å ´åˆã¯ä½•ã‚‚ã—ãªã„
                 return;
             }
             else
@@ -45,45 +52,41 @@ public class GameController: MonoBehaviour
         }
     }
 
-    [SerializeField]private PlayerModel[] players = new PlayerModel[MAX_PLAYERS];
-
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Awake()
     {
-        gameLauncher.OnJoinedMasterClient += OnJoinedMasterClient;
         gameLauncher.OnJoindClient += OnjoindClient;
+        playerModels = new PlayerModel[MAX_PLAYERS];
     }
 
-    private void OnJoinedMasterClient(NetworkRunner runner, int playerId,NetworkObject networkObject)
+    private void OnjoindClient(NetworkRunner runner, int playerId, NetworkObject networkObject, bool isMasterClient)
     {
-        // ƒ}ƒXƒ^[ƒNƒ‰ƒCƒAƒ“ƒg‚ÉQ‰Á‚µ‚½‚Æ‚«‚Ìˆ—‚ğ‚±‚±‚É‹Lq‚µ‚Ü‚·
-        Debug.Log("CATCH Joined Master Client");
-        // ƒ}ƒXƒ^[ƒNƒ‰ƒCƒAƒ“ƒg‚ÉQ‰Á‚µ‚½‚Æ‚«‚ÉƒAƒCƒeƒ€‚ğƒXƒ|[ƒ“‚·‚é
-        itemManager.SpawnItem(runner, 0);
-        players[playerId] = new PlayerModel(networkObject.GetComponent<PlayerAvatar>().NickName.ToString(), networkObject.gameObject);
-        networkObject.GetComponent<PlayerAvatar>().playerId = playerId;
-
-        players[playerId].OnScoreChanged += (score) =>
+        if (isMasterClient)
         {
-            // ƒXƒRƒA‚ª•Ï‚í‚Á‚½‚Æ‚«‚Ìˆ—‚ğ‚±‚±‚É‹Lq‚µ‚Ü‚·
-            scoreText[playerId].text = $"Player {playerId} Score: {score}";
+            // ãƒã‚¹ã‚¿ãƒ¼ã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆã«å‚åŠ ã—ãŸã¨ãã®å‡¦ç†ã‚’ã“ã“ã«è¨˜è¿°ã—ã¾ã™
+            Debug.Log("CATCH Joined Master Client");
+            // ãƒã‚¹ã‚¿ãƒ¼ã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆã«å‚åŠ ã—ãŸã¨ãã«ã‚¢ã‚¤ãƒ†ãƒ ã‚’ã‚¹ãƒãƒ¼ãƒ³ã™ã‚‹
+            itemManager.SpawnItem(runner, 0);
+        }
+        Debug.Log($"CATCH Joined Client: {playerId}, isMasterClient: {isMasterClient}");
+        // ã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆã«å‚åŠ ã—ãŸã¨ãã®å‡¦ç†ã‚’ã“ã“ã«è¨˜è¿°ã—ã¾ã™
+        playerModels[playerId] = runner.Spawn(PlayerModelPrefab).GetComponent<PlayerModel>();
+        playerModels[playerId].transform.SetParent(transform); // Set the parent to GameController for organization
+        networkObject.GetComponent<ItemCatcher>().OnItemCaught += (item, playerAvatar) =>
+        {
+            // ã‚¹ã‚³ã‚¢ã‚’æ›´æ–°ã™ã‚‹
+            playerModels[playerId].score += item.itemValue;
         };
-
-    }
-    private void OnjoindClient(NetworkRunner runner, int playerId, NetworkObject networkObject)
-    {
-        // ƒNƒ‰ƒCƒAƒ“ƒg‚ÉQ‰Á‚µ‚½‚Æ‚«‚Ìˆ—‚ğ‚±‚±‚É‹Lq‚µ‚Ü‚·
-        players[playerId] = new PlayerModel(networkObject.GetComponent<PlayerAvatar>().NickName.ToString(), networkObject.gameObject);
-        players[playerId].OnScoreChanged += (score) =>
+        playerModels[playerId].OnScoreChanged += (score) =>
         {
-            // ƒXƒRƒA‚ª•Ï‚í‚Á‚½‚Æ‚«‚Ìˆ—‚ğ‚±‚±‚É‹Lq‚µ‚Ü‚·
+            // ã‚¹ã‚³ã‚¢ãŒå¤‰ã‚ã£ãŸã¨ãã®å‡¦ç†ã‚’ã“ã“ã«è¨˜è¿°ã—ã¾ã™
             scoreText[playerId].text = $"Player {playerId} Score: {score}";
         };
 
     }
     private void OnChangeState(GameState newState)
     {
-        // ó‘Ô‚ª•Ï‚í‚Á‚½‚Æ‚«‚Ìˆ—‚ğ‚±‚±‚É‹Lq‚µ‚Ü‚·
+        // çŠ¶æ…‹ãŒå¤‰ã‚ã£ãŸã¨ãã®å‡¦ç†ã‚’ã“ã“ã«è¨˜è¿°ã—ã¾ã™
         switch (newState)
         {
             case GameState.WaitingForPlayers:

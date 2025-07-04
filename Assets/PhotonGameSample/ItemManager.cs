@@ -16,6 +16,7 @@ public class ItemManager : MonoBehaviour
         }
         Vector3 spawnPosition = spawnPoints[index];
         var spawnd = runner.Spawn(itemPrefab, spawnPosition, Quaternion.identity);
+        spawnd.transform.SetParent(transform); // Set the parent to ItemManager for organization
         Debug.Log("Item spawned at: " + spawnPosition);
     }
 

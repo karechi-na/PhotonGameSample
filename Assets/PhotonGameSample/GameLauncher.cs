@@ -12,13 +12,12 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
     [SerializeField]
     private NetworkPrefabRef playerAvatarPrefab;
 
-    // イベント: マスタークライアントに参加したときに呼び出されるイベント
-    public event Action<NetworkRunner, int ,NetworkObject> OnJoinedMasterClient;
-    public event Action<NetworkRunner, int, NetworkObject> OnJoindClient;
+    // イベント: クライアントに参加したときに呼び出されるイベント
+    public event Action<NetworkRunner, int, NetworkObject, bool> OnJoindClient;
 
     [SerializeField]
     private Vector3[] spawnPosition
-        = { 
+        = {
             new Vector3(-5, 2, 0),
             new Vector3(5, 2, 0),
     };
@@ -43,8 +42,6 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
     void INetworkRunnerCallbacks.OnObjectEnterAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player) { }
     void INetworkRunnerCallbacks.OnPlayerJoined(NetworkRunner runner, PlayerRef player)
     {
-
-
         // セッションへ参加したプレイヤーが自分自身かどうかを判定する
         if (player == runner.LocalPlayer)
         {
@@ -52,22 +49,14 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
             var playerIndex = runner.SessionInfo.PlayerCount - 1;
             var spawnedPosition = spawnPosition[playerIndex % spawnPosition.Length];
             // 自分自身のアバターをスポーンする
-            var spawndObject=runner.Spawn(playerAvatarPrefab, spawnedPosition, Quaternion.identity, onBeforeSpawned: (_, networkObject) =>
+            var spawndObject = runner.Spawn(playerAvatarPrefab, spawnedPosition, Quaternion.identity, onBeforeSpawned: (_, networkObject) =>
             {
                 // プレイヤー名のネットワークプロパティの初期値として、ランダムな名前を設定する
-                networkObject.GetComponent<PlayerAvatar>().NickName = $"Player{UnityEngine.Random.Range(0, 10000)}";
+                networkObject.GetComponent<PlayerAvatar>().NickName = $"Player{player.PlayerId}";
                 networkObject.GetComponent<PlayerAvatar>().playerId = playerIndex;
             });
-
-            // マスタークライアントのJoin時の処理を呼び出す
-            if (runner.IsSharedModeMasterClient)
-            {
-                OnJoinedMasterClient?.Invoke(runner, playerIndex, spawndObject);
-            }
-            else
-            {
-                OnJoindClient?.Invoke(runner, playerIndex, spawndObject);
-            }
+            // クライアントのJoin時の処理を呼び出す
+            OnJoindClient?.Invoke(runner, playerIndex, spawndObject, runner.IsSharedModeMasterClient);
         }
     }
     void INetworkRunnerCallbacks.OnPlayerLeft(NetworkRunner runner, PlayerRef player) { }

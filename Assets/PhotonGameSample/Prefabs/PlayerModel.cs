@@ -1,35 +1,18 @@
 using UnityEngine;
+using Fusion;
+using System;
+using UnityEngine.SocialPlatforms.Impl;
 
-[System.Serializable]
-public class PlayerModel
+
+public class PlayerModel : NetworkBehaviour
 {
-    public readonly string playerName;
-    public readonly GameObject PlayerGameObject;
-    private int _score = 0;
-    public int score
+    [Networked, OnChangedRender(nameof(OnScoreChangedNetworked))]
+    [SerializeField]public int score { get; set; }
+    public event Action<int> OnScoreChanged;
+
+    public void OnScoreChangedNetworked()
     {
-        get
-        {
-            return _score;
-        }
-        set
-        {
-            if (value != _score)
-            {
-                _score = value;
-                if (OnScoreChanged != null)
-                {
-                    OnScoreChanged?.Invoke(_score);
-                }
-            }
-        }
-    }
-    public event System.Action<int> OnScoreChanged;
-    public PlayerModel(string playerName, GameObject playerGameObject)
-    {
-        this.playerName = playerName;
-        PlayerGameObject = playerGameObject;
-        this._score = 0;
+        OnScoreChanged?.Invoke(score);
     }
 }
 

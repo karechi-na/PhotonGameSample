@@ -1,31 +1,32 @@
-using Fusion;
+ï»¿using Fusion;
 using UnityEngine;
 
-public class Item : NetworkBehaviour    // ItemƒNƒ‰ƒX‚ÍNetworkBehaviour‚ğŒp³‚µ‚Ü‚·
+public class Item : NetworkBehaviour    // Itemã‚¯ãƒ©ã‚¹ã¯NetworkBehaviourã‚’ç¶™æ‰¿ã—ã¾ã™
 {
     private Vector3 startPosition;
     private Vector3 endPosition;
     public float speed = 1.0f;
+    [SerializeField]public int itemValue { get; private set; } = 1;  // ã‚¢ã‚¤ãƒ†ãƒ ã®å€¤ã‚’å®šç¾©ã—ã¾ã™
     [SerializeField] private Vector3 target = Vector3.forward * 5.0f;
 
-    // ˆÊ’u‚ğƒlƒbƒgƒ[ƒN‚Å“¯Šú
+    // ä½ç½®ã‚’ãƒãƒƒãƒˆãƒ¯ãƒ¼ã‚¯ã§åŒæœŸ
     [Networked]
-    public Vector3 NetworkedPosition { get; set; }  // NetworkedPositionƒvƒƒpƒeƒB‚ğ’è‹`‚µ‚Ü‚·
+    public Vector3 NetworkedPosition { get; set; }  // NetworkedPositionãƒ—ãƒ­ãƒ‘ãƒ†ã‚£ã‚’å®šç¾©ã—ã¾ã™
 
-    public override void Spawned()  // Start()‚Ì‘ã‚í‚èBSpawnedƒƒ\ƒbƒh‚ÍAƒIƒuƒWƒFƒNƒg‚ªƒXƒ|[ƒ“‚³‚ê‚½‚Æ‚«‚ÉŒÄ‚Ño‚³‚ê‚Ü‚·
+    public override void Spawned()  // Start()ã®ä»£ã‚ã‚Šã€‚Spawnedãƒ¡ã‚½ãƒƒãƒ‰ã¯ã€ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆãŒã‚¹ãƒãƒ¼ãƒ³ã•ã‚ŒãŸã¨ãã«å‘¼ã³å‡ºã•ã‚Œã¾ã™
     {
-        // ‰ŠúˆÊ’u‚ğ•Û‘¶
+        // åˆæœŸä½ç½®ã‚’ä¿å­˜
         startPosition = transform.position;
         endPosition = startPosition + target;
 
-        // StateAuthority‚Ì‚İ‚ªˆÊ’u‚ğ§Œä
+        // StateAuthorityã®ã¿ãŒä½ç½®ã‚’åˆ¶å¾¡
         if (Object.HasStateAuthority)
         {
             NetworkedPosition = startPosition;
         }
         else
         {
-            // ƒNƒ‰ƒCƒAƒ“ƒg‚Í‘¦À‚É“¯ŠúˆÊ’u‚ÉˆÚ“®
+            // ã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆã¯å³åº§ã«åŒæœŸä½ç½®ã«ç§»å‹•
             transform.position = NetworkedPosition;
         }
     }
@@ -34,25 +35,25 @@ public class Item : NetworkBehaviour    // ItemƒNƒ‰ƒX‚ÍNetworkBehaviour‚ğŒp³‚µ‚
     {
         if (Object.HasStateAuthority)
         {
-            // t‚Í0`1‚ÌŠÔ‚ğ‰•œ‚·‚é
+            // tã¯0ï½1ã®é–“ã‚’å¾€å¾©ã™ã‚‹
             float t = Mathf.PingPong(Runner.SimulationTime * speed, 1.0f);
-            // üŒ`•âŠÔ‚ÅˆÊ’u‚ğXV
+            // ç·šå½¢è£œé–“ã§ä½ç½®ã‚’æ›´æ–°
             NetworkedPosition = Vector3.Lerp(startPosition, endPosition, t);
         }
 
-        // ‚·‚×‚Ä‚ÌƒNƒ‰ƒCƒAƒ“ƒg‚Å“¯ŠúˆÊ’u‚ÉˆÚ“®
+        // ã™ã¹ã¦ã®ã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆã§åŒæœŸä½ç½®ã«ç§»å‹•
         transform.position = NetworkedPosition;
     }
     void OnTriggerEnter(Collider other)
     {
         Debug.Log($"Item caught by {other.name}");
 
-        // ƒAƒCƒeƒ€‚ğƒLƒƒƒbƒ`‚µ‚½‚Æ‚«‚Ìˆ—
+        // ã‚¢ã‚¤ãƒ†ãƒ ãŒã‚­ãƒ£ãƒƒãƒã•ã‚ŒãŸã¨ãã®å‡¦ç†
         if (other.TryGetComponent(out ItemCatcher itemCatcher))
         {
-            // ƒAƒCƒeƒ€ƒLƒƒƒbƒ`ƒƒ[‚ÌƒCƒxƒ“ƒg‚ğŒÄ‚Ño‚·
-            itemCatcher.ItemCaught?.Invoke(this, other.GetComponent<PlayerAvatar>());
-            // ƒAƒCƒeƒ€‚ğíœ
+            // ã‚¢ã‚¤ãƒ†ãƒ ã‚­ãƒ£ãƒƒãƒãƒ£ãƒ¼ã®ã‚¤ãƒ™ãƒ³ãƒˆã‚’å‘¼ã³å‡ºã™
+            itemCatcher.ItemCought(this);
+            // ã‚¢ã‚¤ãƒ†ãƒ ã‚’å‰Šé™¤
             Runner.Despawn(Object);
         }
     }

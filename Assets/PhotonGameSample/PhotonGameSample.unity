@@ -206,8 +206,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 330585543}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.019282378, y: 0.2633097, z: -0.0052640894, w: 0.9645043}
-  m_LocalPosition: {x: -1.2703264, y: 0.1, z: -2.1532001}
+  m_LocalRotation: {x: 0.03364602, y: -0.3421391, z: 0.012259876, w: 0.93896675}
+  m_LocalPosition: {x: 1.7077497, y: 0.19049221, z: -2.0322492}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -846,7 +846,7 @@ GameObject:
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
+  m_StaticEditorFlags: 2147483647
   m_IsActive: 1
 --- !u!114 &1092109759
 MonoBehaviour:
@@ -862,10 +862,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   gameLauncher: {fileID: 674588593}
   itemManager: {fileID: 1661563538}
+  PlayerModelPrefab: {fileID: 9197762306842048357, guid: 22ceb568f72562d49afa11bd1a95ba52, type: 3}
   scoreText:
   - {fileID: 1007007604}
   - {fileID: 1854545041}
-  players: []
+  playerModels: []
 --- !u!4 &1092109760
 Transform:
   m_ObjectHideFlags: 0
