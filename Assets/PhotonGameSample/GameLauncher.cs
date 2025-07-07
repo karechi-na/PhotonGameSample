@@ -42,6 +42,8 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
     void INetworkRunnerCallbacks.OnObjectEnterAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player) { }
     void INetworkRunnerCallbacks.OnPlayerJoined(NetworkRunner runner, PlayerRef player)
     {
+        Debug.Log($"Player {player.PlayerId} joined the game.");
+        NetworkObject spawndObject=null;
         // セッションへ参加したプレイヤーが自分自身かどうかを判定する
         if (player == runner.LocalPlayer)
         {
@@ -49,15 +51,17 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
             var playerIndex = runner.SessionInfo.PlayerCount - 1;
             var spawnedPosition = spawnPosition[playerIndex % spawnPosition.Length];
             // 自分自身のアバターをスポーンする
-            var spawndObject = runner.Spawn(playerAvatarPrefab, spawnedPosition, Quaternion.identity, onBeforeSpawned: (_, networkObject) =>
+            spawndObject = runner.Spawn(playerAvatarPrefab, spawnedPosition, Quaternion.identity, onBeforeSpawned: (_, networkObject) =>
             {
                 // プレイヤー名のネットワークプロパティの初期値として、ランダムな名前を設定する
-                networkObject.GetComponent<PlayerAvatar>().NickName = $"Player{player.PlayerId}";
-                networkObject.GetComponent<PlayerAvatar>().playerId = playerIndex;
+                var playerAvatar = networkObject.GetComponent<PlayerAvatar>();
+                playerAvatar.NickName = $"Player{player.PlayerId}";
+                playerAvatar.playerId = player.PlayerId;
             });
-            // クライアントのJoin時の処理を呼び出す
-            OnJoindClient?.Invoke(runner, playerIndex, spawndObject, runner.IsSharedModeMasterClient);
         }
+        // クライアントのJoin時の処理を呼び出す
+        OnJoindClient?.Invoke(runner, player.PlayerId, spawndObject, runner.IsSharedModeMasterClient);
+
     }
     void INetworkRunnerCallbacks.OnPlayerLeft(NetworkRunner runner, PlayerRef player) { }
     void INetworkRunnerCallbacks.OnInput(NetworkRunner runner, NetworkInput input) { }
