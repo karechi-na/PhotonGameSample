@@ -71,26 +71,24 @@ public class GameController : MonoBehaviour
             itemManager.SpawnItem(runner, 0);
         }
         Debug.Log($"CATCH Joined Client: {playerId}, isMasterClient: {isMasterClient}");
-        if (this.isMasterClient && !playerModels.ContainsKey(playerId) && playerModels.Count < MAX_PLAYERS)
+        if (networkObject != null && !playerModels.ContainsKey(playerId) && playerModels.Count < MAX_PLAYERS)
         {
             // クライアントに参加したときの処理をここに記述します
             playerModels[playerId] = runner.Spawn(PlayerModelPrefab).GetComponent<PlayerModel>();
             playerModels[playerId].transform.SetParent(transform); // Set the parent to GameController for organization
-            playerModels[playerId].scoreText = scoreText[playerModels.Count - 1]; // Initialize the player's score
         }
-        if (networkObject != null)
+        playerModels[playerId].scoreText = scoreText[playerModels.Count - 1]; // Initialize the player's score
+        networkObject.GetComponent<ItemCatcher>().OnItemCaught += (item, playerAvatar) =>
         {
-            networkObject.GetComponent<ItemCatcher>().OnItemCaught += (item, playerAvatar) =>
-            {
-                // スコアを更新する
-                playerModels[playerId].score += item.itemValue;
-            };
-            playerModels[playerId].OnScoreChanged += (score) =>
-            {
-                // スコアが変わったときの処理をここに記述します
-                playerModels[playerId].scoreText.text = $"Player {playerId} Score: {score}";
-            };
-        }
+            // スコアを更新する
+            playerModels[playerId].score += item.itemValue;
+        };
+        playerModels[playerId].OnScoreChanged += (score) =>
+        {
+            // スコアが変わったときの処理をここに記述します
+            playerModels[playerId].scoreText.text = $"Player {playerId} Score: {score}";
+        };
+
 
     }
     private void OnChangeState(GameState newState)
