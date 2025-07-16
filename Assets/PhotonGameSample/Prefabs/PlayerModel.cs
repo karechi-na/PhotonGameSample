@@ -2,19 +2,40 @@ using UnityEngine;
 using TMPro;
 using Fusion;
 using System;
-using UnityEngine.SocialPlatforms.Impl;
 
 
-public class PlayerModel : NetworkBehaviour
+public class PlayerModel
 {
-    [Networked, OnChangedRender(nameof(OnScoreChangedNetworked))]
-    [SerializeField]public int score { get; set; }
-    public TextMeshProUGUI scoreText; // Reference to the UI Text component to display the score
+    private int _score;
+    [SerializeField]
+    public int score
+    {
+        get => _score;
+        private set
+        {
+            if (_score != value)
+            {
+                _score = value;
+                OnScoreChanged?.Invoke(_score);
+            }
+        }
+    }
     public event Action<int> OnScoreChanged;
 
     public void OnScoreChangedNetworked()
     {
         OnScoreChanged?.Invoke(score);
+    }
+
+    // スコアを変更する
+    public void SetScore(int newScore)
+    {
+        score = newScore;
+    }
+    // スコアを加算する
+    public void AddScore(int amount)
+    {
+        score += amount;
     }
 }
 

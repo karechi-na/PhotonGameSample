@@ -9,8 +9,18 @@ using System.Collections.Generic;
 public class GameController : MonoBehaviour
 {
     const int MAX_PLAYERS = 2; // Maximum number of players allowed in the game
-
     private bool isMasterClient = false; // Flag to check if the current client is the master client
+    /// <summary>
+    /// Player spawn positions in the game world.
+    /// </summary>
+    [SerializeField]
+    private Vector3[] spawnPosition
+    = {
+            new Vector3(-5, 2, 0),
+            new Vector3(5, 2, 0),
+    };
+
+    [SerializeField] private TextMeshProUGUI statusWindow;
 
     /// <summary>
     /// external references to GameLauncher and ItemManager components.
@@ -19,11 +29,12 @@ public class GameController : MonoBehaviour
     [SerializeField] private ItemManager itemManager;
 
     /// <summary>
-    /// PlayerModel array to hold player data.
+    /// PlayerModel
     /// </summary>
     [SerializeField] private NetworkBehaviour PlayerModelPrefab;
-    [SerializeField] private TextMeshProUGUI[] scoreText;
-    [SerializeField] private Dictionary<int, PlayerModel> playerModels;
+    [SerializeField] private TextMeshProUGUI scoreText;
+    [SerializeField] private PlayerModel playerModel;
+    [SerializeField] private NetworkPrefabRef playerAvatarPrefab;
     /// <summary>
     /// GameState enum defines the possible states of the game.
     /// </summary>
@@ -59,36 +70,34 @@ public class GameController : MonoBehaviour
     void Awake()
     {
         gameLauncher.OnJoindClient += OnjoindClient;
-        playerModels = new Dictionary<int, PlayerModel>();
     }
 
-    private void OnjoindClient(NetworkRunner runner, int playerId, NetworkObject networkObject, bool isMasterClient)
+    private void OnjoindClient(NetworkRunner runner, PlayerRef player, bool isMasterClient)
     {
-        if (isMasterClient && networkObject != null)
+        if (isMasterClient)
         {
             this.isMasterClient = true; // Set the flag to true if this client is the master client
             // マスタークライアントに参加したときにアイテムをスポーンする
             itemManager.SpawnItem(runner, 0);
         }
-        Debug.Log($"CATCH Joined Client: {playerId}, isMasterClient: {isMasterClient}");
-        if (networkObject != null && !playerModels.ContainsKey(playerId) && playerModels.Count < MAX_PLAYERS)
+        if (runner.LocalPlayer == player)
         {
-            // クライアントに参加したときの処理をここに記述します
-            playerModels[playerId] = runner.Spawn(PlayerModelPrefab).GetComponent<PlayerModel>();
-            playerModels[playerId].transform.SetParent(transform); // Set the parent to GameController for organization
-        }
-        playerModels[playerId].scoreText = scoreText[playerModels.Count - 1]; // Initialize the player's score
-        networkObject.GetComponent<ItemCatcher>().OnItemCaught += (item, playerAvatar) =>
-        {
-            // スコアを更新する
-            playerModels[playerId].score += item.itemValue;
-        };
-        playerModels[playerId].OnScoreChanged += (score) =>
-        {
-            // スコアが変わったときの処理をここに記述します
-            playerModels[playerId].scoreText.text = $"Player {playerId} Score: {score}";
-        };
+            var playerIndex = runner.SessionInfo.PlayerCount - 1;
+            var spawnedPosition = spawnPosition[playerIndex % spawnPosition.Length];
+            // 自分自身のアバターをスポーンする
+            var spawnedObject = runner.Spawn(PlayerModelPrefab, spawnedPosition, Quaternion.identity, onBeforeSpawned: (_, networkObject) =>
+            {
+                // プレイヤー名のネットワークプロパティの初期値として、ランダムな名前を設定する
+                var playerAvatar = networkObject.GetComponent<PlayerAvatar>();
+                playerAvatar.NickName = $"Player{player.PlayerId}";
+                playerAvatar.playerId = player.PlayerId;
+            });
+            
+            spawnedObject.GetComponent<ItemCatcher>().OnItemCaught += (item, playerAvatar) =>
+            {
 
+            };
+        }
 
     }
     private void OnChangeState(GameState newState)

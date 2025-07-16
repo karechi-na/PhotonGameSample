@@ -9,20 +9,10 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
 {
     [SerializeField]
     private NetworkRunner networkRunnerPrefab;
-    [SerializeField]
-    private NetworkPrefabRef playerAvatarPrefab;
+
 
     // イベント: クライアントに参加したときに呼び出されるイベント
-    public event Action<NetworkRunner, int, NetworkObject, bool> OnJoindClient;
-
-    [SerializeField]
-    private Vector3[] spawnPosition
-        = {
-            new Vector3(-5, 2, 0),
-            new Vector3(5, 2, 0),
-    };
-    [SerializeField] private Quaternion spawnRotation = Quaternion.identity;
-
+    public event Action<NetworkRunner, PlayerRef, bool> OnJoindClient;
 
     [SerializeField]
     private NetworkPrefabRef itemPrefab;
@@ -43,25 +33,9 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
     void INetworkRunnerCallbacks.OnPlayerJoined(NetworkRunner runner, PlayerRef player)
     {
         Debug.Log($"Player {player.PlayerId} joined the game.");
-        NetworkObject spawndObject=null;
-        // セッションへ参加したプレイヤーが自分自身かどうかを判定する
-        if (player == runner.LocalPlayer)
-        {
-            // アバターの初期位置を計算する
-            var playerIndex = runner.SessionInfo.PlayerCount - 1;
-            var spawnedPosition = spawnPosition[playerIndex % spawnPosition.Length];
-            // 自分自身のアバターをスポーンする
-            spawndObject = runner.Spawn(playerAvatarPrefab, spawnedPosition, Quaternion.identity, onBeforeSpawned: (_, networkObject) =>
-            {
-                // プレイヤー名のネットワークプロパティの初期値として、ランダムな名前を設定する
-                var playerAvatar = networkObject.GetComponent<PlayerAvatar>();
-                playerAvatar.NickName = $"Player{player.PlayerId}";
-                playerAvatar.playerId = player.PlayerId;
-            });
-        }
         // クライアントのJoin時の処理を呼び出す
-        OnJoindClient?.Invoke(runner, player.PlayerId, spawndObject, runner.IsSharedModeMasterClient);
-
+        OnJoindClient?.Invoke(runner, player, runner.IsSharedModeMasterClient);
+            
     }
     void INetworkRunnerCallbacks.OnPlayerLeft(NetworkRunner runner, PlayerRef player) { }
     void INetworkRunnerCallbacks.OnInput(NetworkRunner runner, NetworkInput input) { }
