@@ -53,6 +53,8 @@ public class Item : NetworkBehaviour    // ItemクラスはNetworkBehaviourを�
         {
             // アイテムキャッチャーのイベントを呼び出す
             itemCatcher.ItemCought(this);
+            gameObject.SetActive(false); // アイテムを非アクティブにする
+
             // アイテムを削除
             Runner.Despawn(Object);
         }

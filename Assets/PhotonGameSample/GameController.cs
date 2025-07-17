@@ -74,30 +74,38 @@ public class GameController : MonoBehaviour
 
     private void OnjoindClient(NetworkRunner runner, PlayerRef player, bool isMasterClient)
     {
-        if (isMasterClient)
-        {
-            this.isMasterClient = true; // Set the flag to true if this client is the master client
-            // マスタークライアントに参加したときにアイテムをスポーンする
-            itemManager.SpawnItem(runner, 0);
-        }
         if (runner.LocalPlayer == player)
         {
+            if (isMasterClient)
+            {
+                this.isMasterClient = true; // Set the flag to true if this client is the master client
+                // マスタークライアントに参加したときにアイテムをスポーンする
+                itemManager.SpawnItem(runner, 0);
+            }
+
             var playerIndex = runner.SessionInfo.PlayerCount - 1;
             var spawnedPosition = spawnPosition[playerIndex % spawnPosition.Length];
             // 自分自身のアバターをスポーンする
             var spawnedObject = runner.Spawn(PlayerModelPrefab, spawnedPosition, Quaternion.identity, onBeforeSpawned: (_, networkObject) =>
             {
-                // プレイヤー名のネットワークプロパティの初期値として、ランダムな名前を設定する
+                // プレイヤー名をネットワークプロパティで設定する
                 var playerAvatar = networkObject.GetComponent<PlayerAvatar>();
                 playerAvatar.NickName = $"Player{player.PlayerId}";
                 playerAvatar.playerId = player.PlayerId;
             });
-            
+
+            //PalyerModelの初期化
+            playerModel = new PlayerModel();
             spawnedObject.GetComponent<ItemCatcher>().OnItemCaught += (item, playerAvatar) =>
             {
-
+                playerModel.AddScore(item.itemValue);
             };
-        }
+
+            playerModel.OnScoreChanged += (score) =>
+            {
+                scoreText.text = $"Score: {score}";
+            };
+        } 
 
     }
     private void OnChangeState(GameState newState)

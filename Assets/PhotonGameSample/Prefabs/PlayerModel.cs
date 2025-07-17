@@ -22,9 +22,9 @@ public class PlayerModel
     }
     public event Action<int> OnScoreChanged;
 
-    public void OnScoreChangedNetworked()
+    public PlayerModel(int initialScore = 0)
     {
-        OnScoreChanged?.Invoke(score);
+        score = initialScore;
     }
 
     // スコアを変更する
