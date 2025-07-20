@@ -111,14 +111,20 @@ public class ItemManager : MonoBehaviour
     public void OnItemCollected(Item item, PlayerAvatar player)
     {
         itemsCollected++;
-        Debug.Log($"ItemManager: Item collected by Player {player.playerId}. Progress: {itemsCollected}/{totalItemsInScene}");
+        Debug.Log($"=== ItemManager: ITEM COLLECTED ===");
+        Debug.Log($"Player {player.playerId} ({player.NickName.Value}) collected item");
+        Debug.Log($"Item value: {item.itemValue}");
+        Debug.Log($"Progress: {itemsCollected}/{totalItemsInScene}");
+        Debug.Log($"Player current score: {player.Score}");
         
         OnItemCountChanged?.Invoke(itemsCollected, totalItemsInScene);
         
         // 全アイテムが収集されたかチェック
         if (itemsCollected >= totalItemsInScene && totalItemsInScene > 0)
         {
-            Debug.Log($"ItemManager: All items collected! Final count: {itemsCollected}/{totalItemsInScene}");
+            Debug.Log($"=== ItemManager: ALL ITEMS COLLECTED! ===");
+            Debug.Log($"Final count: {itemsCollected}/{totalItemsInScene}");
+            Debug.Log($"Triggering OnAllItemsCollected event");
             OnAllItemsCollected?.Invoke();
         }
         else

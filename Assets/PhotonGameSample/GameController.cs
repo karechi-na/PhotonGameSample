@@ -13,7 +13,6 @@ using System.Collections.Generic;
 public class GameController : MonoBehaviour
 {
     const int MAX_PLAYERS = 2; // Maximum number of players allowed in the game
-    private bool isMasterClient = false; // Flag to check if the current client is the master client
 
     // 全プレイヤーのアバター参照を保持
     private Dictionary<int, PlayerAvatar> allPlayerAvatars = new Dictionary<int, PlayerAvatar>();
@@ -21,34 +20,24 @@ public class GameController : MonoBehaviour
     // プレイヤーIDとスコアUIの対応を保持
     private Dictionary<int, TextMeshProUGUI> playerScoreTexts = new Dictionary<int, TextMeshProUGUI>();
 
-    // ゲーム終了管理（ItemManagerに移動）
+    // ゲーム終了管理
     private bool gameEnded = false;
-    /// <summary>
-    /// Player spawn positions in the game world.
-    /// </summary>
-    [SerializeField]
-    private Vector3[] spawnPosition
-    = {
-            new Vector3(-5, 2, 0),
-            new Vector3(5, 2, 0),
-    };
 
     [SerializeField] private TextMeshProUGUI statusWindow;
 
     /// <summary>
-    /// external references to GameLauncher and ItemManager components.
+    /// external references to ItemManager and NetworkGameManager components.
     /// </summary>
-    [SerializeField] private GameLauncher gameLauncher;
     [SerializeField] private ItemManager itemManager;
+    [SerializeField]private NetworkGameManager networkGameManager;
 
 
     /// <summary>
-    /// PlayerModel
+    /// PlayerModel UI components
     /// </summary>
     [SerializeField] private TextMeshProUGUI scoreText1;
     [SerializeField] private TextMeshProUGUI ScoreText2; // 二人目のプレイヤー用のスコアテキスト
     private PlayerModel localPlayerModel; // ローカルプレイヤーのモデル
-    [SerializeField] private PlayerAvatar playerAvatarPrefab;
     /// <summary>
     /// GameState enum defines the possible states of the game.
     /// </summary>
@@ -82,9 +71,25 @@ public class GameController : MonoBehaviour
 
     void Awake()
     {
-        gameLauncher.OnJoindClient += OnjoindClient;
-        // プレイヤー離脱イベントも追加（GameLauncherに実装が必要）
-        // gameLauncher.OnPlayerLeft += OnPlayerLeft;
+        // NetworkGameManagerの参照を取得してイベントを登録
+        networkGameManager = GetComponent<NetworkGameManager>();
+        if (networkGameManager == null)
+        {
+            networkGameManager = FindFirstObjectByType<NetworkGameManager>();
+        }
+        
+        if (networkGameManager != null)
+        {
+            networkGameManager.OnClientJoined += OnClientJoined;
+            networkGameManager.OnPlayerSpawned += OnPlayerSpawned;
+            networkGameManager.OnPlayerLeft += OnPlayerLeft;
+            networkGameManager.OnGameEndRequested += OnGameEndRequested;
+            Debug.Log("GameController: NetworkGameManager events registered");
+        }
+        else
+        {
+            Debug.LogError("GameController: NetworkGameManager not found!");
+        }
     }
 
     void Start()
@@ -126,7 +131,9 @@ public class GameController : MonoBehaviour
 
     private void OnAllItemsCollected()
     {
-        Debug.Log("GameController: All items collected event received - ending game");
+        Debug.Log("GameController: All items collected event received");
+        
+        // 直接ゲーム終了を実行（全クライアントで独立して判定）
         EndGame();
     }
 
@@ -148,7 +155,7 @@ public class GameController : MonoBehaviour
         Debug.Log($"Total UI texts registered: {playerScoreTexts.Count}");
     }
 
-    private System.Collections.IEnumerator RegisterExistingPlayers()
+    private IEnumerator RegisterExistingPlayers()
     {
         yield return new WaitForSeconds(0.5f); // 少し待ってからプレイヤーを検索
 
@@ -165,7 +172,7 @@ public class GameController : MonoBehaviour
         StartCoroutine(ContinuousPlayerCheck());
     }
 
-    private System.Collections.IEnumerator ContinuousPlayerCheck()
+    private IEnumerator ContinuousPlayerCheck()
     {
         while (true)
         {
@@ -193,8 +200,8 @@ public class GameController : MonoBehaviour
             // 初期状態では入力を無効化
             avatar.SetInputEnabled(CurrentGameState == GameState.InGame);
 
-            Debug.Log($"Registered Player {avatar.playerId} for score updates");
-            Debug.Log($"Player {avatar.playerId} current score: {avatar.Score}");
+            Debug.Log($"GameController: Registered Player {avatar.playerId} for score updates. Total players: {allPlayerAvatars.Count}");
+            Debug.Log($"GameController: Player {avatar.playerId} current score: {avatar.Score}");
 
             // 即座にUIを初期化
             OnPlayerScoreChanged(avatar.playerId, avatar.Score);
@@ -204,10 +211,13 @@ public class GameController : MonoBehaviour
             {
                 itemManager.RegisterPlayer(avatar);
             }
+            
+            // プレイヤー登録後にゲーム状態を再確認
+            Debug.Log($"GameController: Current game state after registration: {CurrentGameState}");
         }
         else if (avatar != null)
         {
-            Debug.Log($"Player {avatar.playerId} already registered or avatar is null");
+            Debug.Log($"GameController: Player {avatar.playerId} already registered or avatar is null");
         }
     }
 
@@ -228,29 +238,24 @@ public class GameController : MonoBehaviour
         DetermineWinner();
     }
 
-    private IEnumerator CountItemsAfterDelay()
+    private void DetermineWinner()
     {
-        yield return new WaitForSeconds(1f); // シーンロード完了を待つ
-        
-        if (itemManager != null)
-        {
-            // 既存アイテムをカウントするのみ（スポーンしない）
-            itemManager.CountExistingItems();
-            Debug.Log("ItemManager: Counted existing static items in scene");
-        }
-    }    private void DetermineWinner()
-    {
+        Debug.Log("=== DetermineWinner called ===");
         int highestScore = -1;
         int winnerId = -1;
         List<int> tiedPlayers = new List<int>();
 
+        // まず全プレイヤーの詳細なスコア情報をログ出力
+        Debug.Log($"Total registered players: {allPlayerAvatars.Count}");
         foreach (var avatarPair in allPlayerAvatars)
         {
             var avatar = avatarPair.Value;
             if (avatar != null)
             {
                 int score = avatar.Score;
-                Debug.Log($"Player {avatarPair.Key} final score: {score}");
+                Debug.Log($"=== Player {avatarPair.Key} final score: {score} ===");
+                Debug.Log($"Player {avatarPair.Key} HasStateAuthority: {avatar.HasStateAuthority}");
+                Debug.Log($"Player {avatarPair.Key} NickName: {avatar.NickName.Value}");
 
                 if (score > highestScore)
                 {
@@ -258,13 +263,21 @@ public class GameController : MonoBehaviour
                     winnerId = avatarPair.Key;
                     tiedPlayers.Clear();
                     tiedPlayers.Add(winnerId);
+                    Debug.Log($"New highest score: Player {winnerId} with {highestScore} points");
                 }
                 else if (score == highestScore)
                 {
                     tiedPlayers.Add(avatarPair.Key);
+                    Debug.Log($"Tie detected: Player {avatarPair.Key} also has {score} points");
                 }
             }
+            else
+            {
+                Debug.LogWarning($"Player {avatarPair.Key} avatar is null!");
+            }
         }
+
+        Debug.Log($"Final calculation - Highest Score: {highestScore}, Winner: {winnerId}, Tied Players: [{string.Join(", ", tiedPlayers)}]");
 
         // 勝者の表示
         string resultMessage;
@@ -285,46 +298,51 @@ public class GameController : MonoBehaviour
         }
     }
 
-    private void OnjoindClient(NetworkRunner runner, PlayerRef player, bool isMasterClient)
+    /// <summary>
+    /// NetworkGameManagerからの接続通知を受け取る
+    /// </summary>
+    private void OnClientJoined(NetworkRunner runner, PlayerRef player, bool isMasterClient)
     {
-        if (runner.LocalPlayer == player)
-        {
-            if (isMasterClient)
-            {
-                this.isMasterClient = true; // Set the flag to true if this client is the master client
-                // マスタークライアントに参加したときにアイテムをスポーンする
-                if (runner.IsSceneAuthority)
-                {
-                    runner.LoadScene(SceneRef.FromIndex(1), LoadSceneMode.Additive);
-                }
-
-                // マスタークライアントの場合、ItemManagerを初期化
-                if (itemManager != null)
-                {
-                    itemManager.Initialize(runner);
-                    // スポーンではなく既存アイテムのカウントのみ実行
-                    StartCoroutine(CountItemsAfterDelay());
-                }
-            }
-
-            // シーンが完全に読み込まれるまで少し待ってからスポーンする
-            StartCoroutine(SpawnPlayerAfterDelay(runner, player));
-        }
-
+        Debug.Log($"GameController: Client joined - Player: {player.PlayerId}, IsMaster: {isMasterClient}");
+        
         // プレイヤー数をチェックしてゲーム状態を更新
         CheckPlayerCountAndUpdateGameState(runner);
+    }
+
+    /// <summary>
+    /// NetworkGameManagerからのプレイヤースポーン通知を受け取る
+    /// </summary>
+    private void OnPlayerSpawned(PlayerAvatar playerAvatar)
+    {
+        Debug.Log($"GameController: Player spawned - {playerAvatar.playerId}");
+        RegisterPlayerAvatar(playerAvatar);
+        
+        // スポーン後に再度ゲーム状態をチェック
+        if (networkGameManager != null && networkGameManager.NetworkRunner != null)
+        {
+            CheckPlayerCountAndUpdateGameState(networkGameManager.NetworkRunner);
+        }
+    }
+
+    /// <summary>
+    /// NetworkGameManagerからのゲーム終了要求を受け取る
+    /// </summary>
+    private void OnGameEndRequested()
+    {
+        Debug.Log("GameController: Game end requested from NetworkGameManager");
+        EndGame();
     }
 
     private void CheckPlayerCountAndUpdateGameState(NetworkRunner runner)
     {
         int playerCount = runner.SessionInfo.PlayerCount;
-        Debug.Log($"Current player count: {playerCount}");
+        Debug.Log($"GameController: Current player count: {playerCount}, Registered avatars: {allPlayerAvatars.Count}");
 
         if (playerCount >= MAX_PLAYERS && CurrentGameState == GameState.WaitingForPlayers)
         {
             // 二人揃ったのでゲーム開始
             CurrentGameState = GameState.InGame;
-            Debug.Log("All players joined! Starting game...");
+            Debug.Log("GameController: All players joined! Starting game...");
 
             // 全プレイヤーの操作を有効化
             EnableAllPlayersInput(true);
@@ -333,7 +351,7 @@ public class GameController : MonoBehaviour
         {
             // プレイヤーが足りない場合は待機状態
             CurrentGameState = GameState.WaitingForPlayers;
-            Debug.Log($"Waiting for more players... ({playerCount}/{MAX_PLAYERS})");
+            Debug.Log($"GameController: Waiting for more players... ({playerCount}/{MAX_PLAYERS})");
 
             // 全プレイヤーの操作を無効化
             EnableAllPlayersInput(false);
@@ -368,36 +386,6 @@ public class GameController : MonoBehaviour
             {
                 CurrentGameState = GameState.WaitingForPlayers;
                 EnableAllPlayersInput(false);
-            }
-        }
-    }
-
-    private System.Collections.IEnumerator SpawnPlayerAfterDelay(NetworkRunner runner, PlayerRef player)
-    {
-        // フレームを少し待つ
-        yield return new WaitForEndOfFrame();
-        yield return new WaitForSeconds(0.1f);
-
-        var playerIndex = runner.SessionInfo.PlayerCount - 1;
-        var spawnedPosition = spawnPosition[playerIndex % spawnPosition.Length];
-
-        // 自分自身のアバターをスポーンする
-        var spawnedObject = runner.Spawn(playerAvatarPrefab, spawnedPosition, Quaternion.identity,
-            onBeforeSpawned: (_, networkObject) =>
-            {
-                // プレイヤー名をネットワークプロパティで設定する
-                var playerAvatar = networkObject.GetComponent<PlayerAvatar>();
-                playerAvatar.NickName = $"Player{player.PlayerId}";
-                playerAvatar.playerId = player.PlayerId;
-            });
-
-        // スポーンしたプレイヤーのスコア変更イベントをサブスクライブ
-        if (spawnedObject != null)
-        {
-            var playerAvatar = spawnedObject.GetComponent<PlayerAvatar>();
-            if (playerAvatar != null)
-            {
-                RegisterPlayerAvatar(playerAvatar);
             }
         }
     }
@@ -437,8 +425,12 @@ public class GameController : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.F9))
         {
             Debug.Log("Force ending game...");
-            // ItemManagerを通じて強制終了
-            if (itemManager != null)
+            // NetworkGameManager経由で強制終了
+            if (networkGameManager != null)
+            {
+                networkGameManager.RequestGameEnd();
+            }
+            else
             {
                 EndGame();
             }
@@ -503,6 +495,18 @@ public class GameController : MonoBehaviour
         else
         {
             CurrentGameState = GameState.WaitingForPlayers;
+        }
+    }
+
+    void OnDestroy()
+    {
+        // NetworkGameManagerのイベント登録解除
+        if (networkGameManager != null)
+        {
+            networkGameManager.OnClientJoined -= OnClientJoined;
+            networkGameManager.OnPlayerSpawned -= OnPlayerSpawned;
+            networkGameManager.OnPlayerLeft -= OnPlayerLeft;
+            networkGameManager.OnGameEndRequested -= OnGameEndRequested;
         }
     }
 }

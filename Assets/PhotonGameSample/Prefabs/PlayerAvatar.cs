@@ -55,13 +55,22 @@ public class PlayerAvatar : NetworkBehaviour
 
     private void OnItemCaught(Item item, PlayerAvatar playerAvatar)
     {
-        Debug.Log($"OnItemCaught called for Player {playerId}, HasStateAuthority: {HasStateAuthority}");
+        Debug.Log($"=== OnItemCaught called ===");
+        Debug.Log($"Player {playerId} ({NickName.Value}) caught item");
+        Debug.Log($"Item value: {item.itemValue}");
+        Debug.Log($"HasStateAuthority: {HasStateAuthority}");
+        Debug.Log($"Current Score before: {Score}");
+        
         if (HasStateAuthority)
         {
             // スコアを加算（ネットワーク同期される）
             int oldScore = Score;
             Score += item.itemValue;
-            Debug.Log($"at PlayerAvatar> Player {playerId} caught item! Score: {oldScore} -> {Score}");
+            Debug.Log($"=== SCORE UPDATED === Player {playerId} caught item! Score: {oldScore} -> {Score}");
+        }
+        else
+        {
+            Debug.Log($"Player {playerId} does not have state authority - score not updated");
         }
     }
 
