@@ -14,6 +14,9 @@ public class PlayerAvatar : NetworkBehaviour
     private NetworkCharacterController characterController;
     private NetworkMecanimAnimator networkAnimator;
     
+    // 入力制御フラグ
+    private bool inputEnabled = false;
+    
     // スコア変更時のイベント
     public event Action<int, int> OnScoreChanged; // (playerId, newScore)
 
@@ -64,8 +67,8 @@ public class PlayerAvatar : NetworkBehaviour
 
     public override void FixedUpdateNetwork()
     {
-        // 移動処理
-        if (HasStateAuthority)
+        // 移動処理（入力が有効な場合のみ）
+        if (HasStateAuthority && inputEnabled)
         {
             var cameraRotation = Quaternion.Euler(0f, Camera.main.transform.rotation.eulerAngles.y, 0f);
             var inputDirection = new Vector3(Input.GetAxis("Horizontal"), 0f, Input.GetAxis("Vertical"));
@@ -87,5 +90,12 @@ public class PlayerAvatar : NetworkBehaviour
         animator.SetBool("Grounded", grounded);
         animator.SetBool("FreeFall", !grounded && vy < -4f);
         animator.SetFloat("MotionSpeed", 1f);
+    }
+
+    // 入力の有効/無効を設定
+    public void SetInputEnabled(bool enabled)
+    {
+        inputEnabled = enabled;
+        Debug.Log($"Player {playerId} input set to: {enabled}");
     }
 }

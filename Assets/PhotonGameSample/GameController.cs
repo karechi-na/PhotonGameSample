@@ -4,6 +4,8 @@ using Fusion;
 using TMPro;
 using System.Collections;
 using System.Collections.Generic;
+
+[RequireComponent(typeof(ItemManager))]
 /// <summary>
 /// GameController is responsible for managing the game state and handling player interactions.
 /// Stay within the maximum player limit and manage player models.
@@ -12,9 +14,15 @@ public class GameController : MonoBehaviour
 {
     const int MAX_PLAYERS = 2; // Maximum number of players allowed in the game
     private bool isMasterClient = false; // Flag to check if the current client is the master client
-    
+
     // 全プレイヤーのアバター参照を保持
     private Dictionary<int, PlayerAvatar> allPlayerAvatars = new Dictionary<int, PlayerAvatar>();
+
+    // プレイヤーIDとスコアUIの対応を保持
+    private Dictionary<int, TextMeshProUGUI> playerScoreTexts = new Dictionary<int, TextMeshProUGUI>();
+
+    // ゲーム終了管理（ItemManagerに移動）
+    private bool gameEnded = false;
     /// <summary>
     /// Player spawn positions in the game world.
     /// </summary>
@@ -33,11 +41,12 @@ public class GameController : MonoBehaviour
     [SerializeField] private GameLauncher gameLauncher;
     [SerializeField] private ItemManager itemManager;
 
+
     /// <summary>
     /// PlayerModel
     /// </summary>
-    [SerializeField] private TextMeshProUGUI scoreText;
-    [SerializeField] private TextMeshProUGUI player2ScoreText; // 二人目のプレイヤー用のスコアテキスト
+    [SerializeField] private TextMeshProUGUI scoreText1;
+    [SerializeField] private TextMeshProUGUI ScoreText2; // 二人目のプレイヤー用のスコアテキスト
     private PlayerModel localPlayerModel; // ローカルプレイヤーのモデル
     [SerializeField] private PlayerAvatar playerAvatarPrefab;
     /// <summary>
@@ -74,25 +83,79 @@ public class GameController : MonoBehaviour
     void Awake()
     {
         gameLauncher.OnJoindClient += OnjoindClient;
+        // プレイヤー離脱イベントも追加（GameLauncherに実装が必要）
+        // gameLauncher.OnPlayerLeft += OnPlayerLeft;
     }
 
     void Start()
     {
+        itemManager = GetComponent<ItemManager>();
         // UIコンポーネントの確認
-        Debug.Log($"GameController UI Check - scoreText: {scoreText}, player2ScoreText: {player2ScoreText}");
-        
+        Debug.Log($"GameController UI Check - scoreText: {scoreText1}, player2ScoreText: {ScoreText2}");
+
+        // UIの辞書を初期化
+        InitializePlayerScoreTexts();
+
+        // ItemManagerの初期化
+        InitializeItemManager();
+
         // 既存のPlayerAvatarがあれば登録
         StartCoroutine(RegisterExistingPlayers());
+    }
+
+    private void InitializeItemManager()
+    {
+        if (itemManager != null)
+        {
+            // ItemManagerのイベントを登録
+            itemManager.OnAllItemsCollected += OnAllItemsCollected;
+            itemManager.OnItemCountChanged += OnItemCountChanged;
+            Debug.Log("ItemManager events registered");
+        }
+        else
+        {
+            Debug.LogWarning("ItemManager is not assigned!");
+        }
+    }
+
+    private void OnItemCountChanged(int collectedCount, int totalCount)
+    {
+        Debug.Log($"Item progress: {collectedCount}/{totalCount}");
+        // 必要に応じてUIを更新
+    }
+
+    private void OnAllItemsCollected()
+    {
+        Debug.Log("GameController: All items collected event received - ending game");
+        EndGame();
+    }
+
+    private void InitializePlayerScoreTexts()
+    {
+        // プレイヤーIDとUIテキストの対応を設定
+        if (scoreText1 != null)
+        {
+            playerScoreTexts[1] = scoreText1;
+            Debug.Log("Registered scoreText for Player 1");
+        }
+
+        if (ScoreText2 != null)
+        {
+            playerScoreTexts[2] = ScoreText2;
+            Debug.Log("Registered player2ScoreText for Player 2");
+        }
+
+        Debug.Log($"Total UI texts registered: {playerScoreTexts.Count}");
     }
 
     private System.Collections.IEnumerator RegisterExistingPlayers()
     {
         yield return new WaitForSeconds(0.5f); // 少し待ってからプレイヤーを検索
-        
+
         // 既存のプレイヤーを登録
         var existingAvatars = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
         Debug.Log($"Found {existingAvatars.Length} existing PlayerAvatars");
-        
+
         foreach (var avatar in existingAvatars)
         {
             RegisterPlayerAvatar(avatar);
@@ -107,7 +170,7 @@ public class GameController : MonoBehaviour
         while (true)
         {
             yield return new WaitForSeconds(1.0f); // 1秒ごとにチェック
-            
+
             var allAvatars = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
             foreach (var avatar in allAvatars)
             {
@@ -126,15 +189,99 @@ public class GameController : MonoBehaviour
         {
             allPlayerAvatars[avatar.playerId] = avatar;
             avatar.OnScoreChanged += OnPlayerScoreChanged;
+
+            // 初期状態では入力を無効化
+            avatar.SetInputEnabled(CurrentGameState == GameState.InGame);
+
             Debug.Log($"Registered Player {avatar.playerId} for score updates");
             Debug.Log($"Player {avatar.playerId} current score: {avatar.Score}");
-            
+
             // 即座にUIを初期化
             OnPlayerScoreChanged(avatar.playerId, avatar.Score);
+
+            // ItemManagerにプレイヤーを登録（ItemManagerが直接ItemCatcherイベントを処理）
+            if (itemManager != null)
+            {
+                itemManager.RegisterPlayer(avatar);
+            }
         }
         else if (avatar != null)
         {
             Debug.Log($"Player {avatar.playerId} already registered or avatar is null");
+        }
+    }
+
+    private void EndGame()
+    {
+        Debug.Log($"GameController: EndGame called. gameEnded={gameEnded}");
+        
+        if (gameEnded) return;
+
+        gameEnded = true;
+        CurrentGameState = GameState.GameOver;
+        Debug.Log("GameController: Game state changed to GameOver");
+
+        // 全プレイヤーの入力を無効化
+        EnableAllPlayersInput(false);
+
+        // 勝者を決定
+        DetermineWinner();
+    }
+
+    private IEnumerator CountItemsAfterDelay()
+    {
+        yield return new WaitForSeconds(1f); // シーンロード完了を待つ
+        
+        if (itemManager != null)
+        {
+            // 既存アイテムをカウントするのみ（スポーンしない）
+            itemManager.CountExistingItems();
+            Debug.Log("ItemManager: Counted existing static items in scene");
+        }
+    }    private void DetermineWinner()
+    {
+        int highestScore = -1;
+        int winnerId = -1;
+        List<int> tiedPlayers = new List<int>();
+
+        foreach (var avatarPair in allPlayerAvatars)
+        {
+            var avatar = avatarPair.Value;
+            if (avatar != null)
+            {
+                int score = avatar.Score;
+                Debug.Log($"Player {avatarPair.Key} final score: {score}");
+
+                if (score > highestScore)
+                {
+                    highestScore = score;
+                    winnerId = avatarPair.Key;
+                    tiedPlayers.Clear();
+                    tiedPlayers.Add(winnerId);
+                }
+                else if (score == highestScore)
+                {
+                    tiedPlayers.Add(avatarPair.Key);
+                }
+            }
+        }
+
+        // 勝者の表示
+        string resultMessage;
+        if (tiedPlayers.Count > 1)
+        {
+            resultMessage = $"Draw! Players {string.Join(", ", tiedPlayers)} tied with {highestScore} points!";
+        }
+        else
+        {
+            resultMessage = $"Winner: Player {winnerId} with {highestScore} points!";
+        }
+
+        Debug.Log(resultMessage);
+
+        if (statusWindow != null)
+        {
+            statusWindow.text = resultMessage;
         }
     }
 
@@ -150,10 +297,78 @@ public class GameController : MonoBehaviour
                 {
                     runner.LoadScene(SceneRef.FromIndex(1), LoadSceneMode.Additive);
                 }
+
+                // マスタークライアントの場合、ItemManagerを初期化
+                if (itemManager != null)
+                {
+                    itemManager.Initialize(runner);
+                    // スポーンではなく既存アイテムのカウントのみ実行
+                    StartCoroutine(CountItemsAfterDelay());
+                }
             }
 
             // シーンが完全に読み込まれるまで少し待ってからスポーンする
             StartCoroutine(SpawnPlayerAfterDelay(runner, player));
+        }
+
+        // プレイヤー数をチェックしてゲーム状態を更新
+        CheckPlayerCountAndUpdateGameState(runner);
+    }
+
+    private void CheckPlayerCountAndUpdateGameState(NetworkRunner runner)
+    {
+        int playerCount = runner.SessionInfo.PlayerCount;
+        Debug.Log($"Current player count: {playerCount}");
+
+        if (playerCount >= MAX_PLAYERS && CurrentGameState == GameState.WaitingForPlayers)
+        {
+            // 二人揃ったのでゲーム開始
+            CurrentGameState = GameState.InGame;
+            Debug.Log("All players joined! Starting game...");
+
+            // 全プレイヤーの操作を有効化
+            EnableAllPlayersInput(true);
+        }
+        else if (playerCount < MAX_PLAYERS)
+        {
+            // プレイヤーが足りない場合は待機状態
+            CurrentGameState = GameState.WaitingForPlayers;
+            Debug.Log($"Waiting for more players... ({playerCount}/{MAX_PLAYERS})");
+
+            // 全プレイヤーの操作を無効化
+            EnableAllPlayersInput(false);
+        }
+    }
+
+    private void EnableAllPlayersInput(bool enabled)
+    {
+        foreach (var avatarPair in allPlayerAvatars)
+        {
+            var avatar = avatarPair.Value;
+            if (avatar != null)
+            {
+                avatar.SetInputEnabled(enabled);
+                Debug.Log($"Player {avatarPair.Key} input {(enabled ? "enabled" : "disabled")}");
+            }
+        }
+    }
+
+    // プレイヤー離脱時の処理（GameLauncherから呼び出される）
+    public void OnPlayerLeft(int playerId)
+    {
+        if (allPlayerAvatars.ContainsKey(playerId))
+        {
+            Debug.Log($"Player {playerId} left the game");
+
+            // プレイヤーを辞書から削除
+            allPlayerAvatars.Remove(playerId);
+
+            // プレイヤー数が足りなくなったら待機状態に戻す
+            if (allPlayerAvatars.Count < MAX_PLAYERS && CurrentGameState == GameState.InGame)
+            {
+                CurrentGameState = GameState.WaitingForPlayers;
+                EnableAllPlayersInput(false);
+            }
         }
     }
 
@@ -165,9 +380,9 @@ public class GameController : MonoBehaviour
 
         var playerIndex = runner.SessionInfo.PlayerCount - 1;
         var spawnedPosition = spawnPosition[playerIndex % spawnPosition.Length];
-        
+
         // 自分自身のアバターをスポーンする
-        var spawnedObject = runner.Spawn(playerAvatarPrefab, spawnedPosition, Quaternion.identity, 
+        var spawnedObject = runner.Spawn(playerAvatarPrefab, spawnedPosition, Quaternion.identity,
             onBeforeSpawned: (_, networkObject) =>
             {
                 // プレイヤー名をネットワークプロパティで設定する
@@ -190,29 +405,16 @@ public class GameController : MonoBehaviour
     private void OnPlayerScoreChanged(int playerId, int newScore)
     {
         Debug.Log($"OnPlayerScoreChanged called: Player {playerId}, Score {newScore}");
-        
-        // プレイヤーIDに基づいてUIを更新
-        TextMeshProUGUI targetScoreText = null;
-        
-        if (playerId == 1 && scoreText != null)
-        {
-            targetScoreText = scoreText;
-            Debug.Log("Updating Player 1 score text");
-        }
-        else if (playerId == 2 && player2ScoreText != null)
-        {
-            targetScoreText = player2ScoreText;
-            Debug.Log("Updating Player 2 score text");
-        }
-        else
-        {
-            Debug.LogWarning($"No UI text found for Player {playerId}. scoreText: {scoreText}, player2ScoreText: {player2ScoreText}");
-        }
 
-        if (targetScoreText != null)
+        // Dictionaryから該当するUIテキストを取得
+        if (playerScoreTexts.TryGetValue(playerId, out TextMeshProUGUI targetScoreText))
         {
             targetScoreText.text = $"Player{playerId} Score: {newScore}";
             Debug.Log($"Updated UI for Player {playerId}: {targetScoreText.text}");
+        }
+        else
+        {
+            Debug.LogWarning($"No UI text found for Player {playerId}. Available players: {string.Join(", ", playerScoreTexts.Keys)}");
         }
 
         Debug.Log($"Player {playerId} score updated to: {newScore}");
@@ -230,6 +432,17 @@ public class GameController : MonoBehaviour
         {
             TestScoreUpdate(2);
         }
+
+        // デバッグ用：ゲーム強制終了
+        if (Input.GetKeyDown(KeyCode.F9))
+        {
+            Debug.Log("Force ending game...");
+            // ItemManagerを通じて強制終了
+            if (itemManager != null)
+            {
+                EndGame();
+            }
+        }
     }
 
     private void TestScoreUpdate(int playerId)
@@ -244,13 +457,52 @@ public class GameController : MonoBehaviour
         {
             case GameState.WaitingForPlayers:
                 Debug.Log("Waiting for players to join...");
+                if (statusWindow != null)
+                {
+                    statusWindow.text = $"Waiting for players... ({allPlayerAvatars.Count}/{MAX_PLAYERS})";
+                }
+                // ゲーム状態をリセット
+                ResetGameState();
                 break;
             case GameState.InGame:
                 Debug.Log("Game is now in progress.");
+                if (statusWindow != null)
+                {
+                    statusWindow.text = "Game in Progress!";
+                }
                 break;
             case GameState.GameOver:
                 Debug.Log("Game Over!");
+                // 勝者決定はEndGame()で既に実行済み
+                StartCoroutine(RestartGameAfterDelay());
                 break;
+        }
+    }
+
+    private void ResetGameState()
+    {
+        gameEnded = false;
+
+        // ItemManagerでゲーム状態をリセット
+        if (itemManager != null)
+        {
+            itemManager.ResetItemCount();
+        }
+    }
+
+    private System.Collections.IEnumerator RestartGameAfterDelay()
+    {
+        yield return new WaitForSeconds(5.0f); // 5秒間結果を表示
+
+        // ゲームを再開（プレイヤーが2人いる場合）
+        if (allPlayerAvatars.Count >= MAX_PLAYERS)
+        {
+            CurrentGameState = GameState.InGame;
+            EnableAllPlayersInput(true);
+        }
+        else
+        {
+            CurrentGameState = GameState.WaitingForPlayers;
         }
     }
 }
