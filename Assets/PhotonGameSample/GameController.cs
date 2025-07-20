@@ -1,6 +1,8 @@
 ﻿using UnityEngine;
+using UnityEngine.SceneManagement;
 using Fusion;
 using TMPro;
+using System.Collections;
 using System.Collections.Generic;
 /// <summary>
 /// GameController is responsible for managing the game state and handling player interactions.
@@ -31,10 +33,9 @@ public class GameController : MonoBehaviour
     /// <summary>
     /// PlayerModel
     /// </summary>
-    [SerializeField] private NetworkBehaviour PlayerModelPrefab;
     [SerializeField] private TextMeshProUGUI scoreText;
     [SerializeField] private PlayerModel playerModel;
-    [SerializeField] private NetworkPrefabRef playerAvatarPrefab;
+    [SerializeField] private PlayerAvatar playerAvatarPrefab;
     /// <summary>
     /// GameState enum defines the possible states of the game.
     /// </summary>
@@ -80,13 +81,30 @@ public class GameController : MonoBehaviour
             {
                 this.isMasterClient = true; // Set the flag to true if this client is the master client
                 // マスタークライアントに参加したときにアイテムをスポーンする
-                itemManager.SpawnItem(runner, 0);
+                // itemManager.SpawnItem(runner, 0);
+                if (runner.IsSceneAuthority)
+                {
+                    runner.LoadScene(SceneRef.FromIndex(1), LoadSceneMode.Additive);
+                }
             }
 
-            var playerIndex = runner.SessionInfo.PlayerCount - 1;
-            var spawnedPosition = spawnPosition[playerIndex % spawnPosition.Length];
-            // 自分自身のアバターをスポーンする
-            var spawnedObject = runner.Spawn(PlayerModelPrefab, spawnedPosition, Quaternion.identity, onBeforeSpawned: (_, networkObject) =>
+            // シーンが完全に読み込まれるまで少し待ってからスポーンする
+            StartCoroutine(SpawnPlayerAfterDelay(runner, player));
+        }
+    }
+
+    private System.Collections.IEnumerator SpawnPlayerAfterDelay(NetworkRunner runner, PlayerRef player)
+    {
+        // フレームを少し待つ
+        yield return new WaitForEndOfFrame();
+        yield return new WaitForSeconds(0.1f);
+
+        var playerIndex = runner.SessionInfo.PlayerCount - 1;
+        var spawnedPosition = spawnPosition[playerIndex % spawnPosition.Length];
+        
+        // 自分自身のアバターをスポーンする
+        var spawnedObject = runner.Spawn(playerAvatarPrefab, spawnedPosition, Quaternion.identity, 
+            onBeforeSpawned: (_, networkObject) =>
             {
                 // プレイヤー名をネットワークプロパティで設定する
                 var playerAvatar = networkObject.GetComponent<PlayerAvatar>();
@@ -94,19 +112,24 @@ public class GameController : MonoBehaviour
                 playerAvatar.playerId = player.PlayerId;
             });
 
-            //PalyerModelの初期化
-            playerModel = new PlayerModel();
-            spawnedObject.GetComponent<ItemCatcher>().OnItemCaught += (item, playerAvatar) =>
+        //PalyerModelの初期化
+        playerModel = new PlayerModel();
+        if (spawnedObject != null)
+        {
+            var itemCatcher = spawnedObject.GetComponent<ItemCatcher>();
+            if (itemCatcher != null)
             {
-                playerModel.AddScore(item.itemValue);
-            };
+                itemCatcher.OnItemCaught += (item, playerAvatar) =>
+                {
+                    playerModel.AddScore(item.itemValue);
+                };
+            }
+        }
 
-            playerModel.OnScoreChanged += (score) =>
-            {
-                scoreText.text = $"Score: {score}";
-            };
-        } 
-
+        playerModel.OnScoreChanged += (score) =>
+        {
+            scoreText.text = $"Score: {score}";
+        };
     }
     private void OnChangeState(GameState newState)
     {
