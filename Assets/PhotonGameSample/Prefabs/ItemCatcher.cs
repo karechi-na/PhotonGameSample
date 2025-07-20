@@ -14,16 +14,10 @@ public class ItemCatcher : MonoBehaviour
     }
     public void ItemCought(Item item)
     {
-        if (playerAvatar.Object.HasStateAuthority)
-        {
-            Debug.Log($"Item caught by {playerAvatar.NickName.Value}");
+        Debug.Log($"Item caught by {playerAvatar.NickName.Value}");
 
-            // アイテムをキャッチしたときの処理
-            OnItemCaught?.Invoke(item, playerAvatar);
-        }
-        else
-        {
-            Debug.LogWarning("ItemCatcher does not have state authority to catch items.");
-        }
+        // アイテムをキャッチしたときの処理
+        // 権限チェックはPlayerAvatar側で行うため、ここでは常にイベントを発火
+        OnItemCaught?.Invoke(item, playerAvatar);
     }
 }
