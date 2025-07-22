@@ -5,7 +5,8 @@ using TMPro;
 using System.Collections;
 using System.Collections.Generic;
 
-[RequireComponent(typeof(ItemManager), typeof(PlayerManager))]
+[RequireComponent(typeof(ItemManager), typeof(PlayerManager), typeof(GameUIManager))]
+[RequireComponent(typeof(GameRuleProcessor))]
 /// <summary>
 /// GameController is responsible for managing the game state and handling player interactions.
 /// Stay within the maximum player limit and manage player models.
@@ -14,13 +15,8 @@ public class GameController : MonoBehaviour
 {
     const int MAX_PLAYERS = 2; // Maximum number of players allowed in the game
 
-    // プレイヤーIDとスコアUIの対応を保持
-    private Dictionary<int, TextMeshProUGUI> playerScoreTexts = new Dictionary<int, TextMeshProUGUI>();
-
     // ゲーム終了管理
     private bool gameEnded = false;
-
-    [SerializeField] private TextMeshProUGUI statusWindow;
 
     /// <summary>
     /// external references to managers components.
@@ -28,22 +24,10 @@ public class GameController : MonoBehaviour
     [SerializeField] private ItemManager itemManager;
     [SerializeField] private NetworkGameManager networkGameManager;
     [SerializeField] private PlayerManager playerManager; // PlayerManagerとして直接宣言
+    private GameUIManager gameUIManager; // RequireComponentで取得
+    private GameRuleProcessor gameRuleProcessor; // ゲームルール処理
 
-    /// <summary>
-    /// PlayerModel UI components
-    /// </summary>
-    [SerializeField] private TextMeshProUGUI scoreText1;
-    [SerializeField] private TextMeshProUGUI scoreText2; // 二人目のプレイヤー用のスコアテキスト
     private PlayerModel localPlayerModel; // ローカルプレイヤーのモデル
-    /// <summary>
-    /// GameState enum defines the possible states of the game.
-    /// </summary>
-    public enum GameState
-    {
-        WaitingForPlayers,
-        InGame,
-        GameOver
-    }
 
     private GameState currentGameState = GameState.WaitingForPlayers;
     public GameState CurrentGameState
@@ -69,6 +53,17 @@ public class GameController : MonoBehaviour
     void Awake()
     {
         Debug.Log("GameController: Awake() called");
+        
+        // GameUIManagerの参照を取得
+        gameUIManager = GetComponent<GameUIManager>();
+        if (gameUIManager == null)
+        {
+            Debug.LogError("GameController: ❌ GameUIManager not found!");
+        }
+        else
+        {
+            Debug.Log("GameController: ✅ GameUIManager found");
+        }
         
         // NetworkGameManagerの参照を取得してイベントを登録
         networkGameManager = GetComponent<NetworkGameManager>();
@@ -105,6 +100,19 @@ public class GameController : MonoBehaviour
         {
             Debug.LogError("GameController: ❌ PlayerManager not found!");
         }
+
+        // GameRuleProcessorの参照を取得してイベントを登録
+        gameRuleProcessor = GetComponent<GameRuleProcessor>();
+        if (gameRuleProcessor != null)
+        {
+            gameRuleProcessor.OnGameEndTriggered += EndGame;
+            gameRuleProcessor.OnWinnerDetermined += OnWinnerDetermined;
+            Debug.Log("GameController: ✅ GameRuleProcessor events registered");
+        }
+        else
+        {
+            Debug.LogError("GameController: ❌ GameRuleProcessor not found!");
+        }
         
         Debug.Log("GameController: Awake() completed");
     }
@@ -112,12 +120,7 @@ public class GameController : MonoBehaviour
     void Start()
     {
         itemManager = GetComponent<ItemManager>();
-        // UIコンポーネントの確認
-        Debug.Log($"GameController UI Check - scoreText: {scoreText1}, player2ScoreText: {scoreText2}");
-
-        // UIの辞書を初期化
-        InitializePlayerScoreTexts();
-
+        
         // ItemManagerの初期化
         InitializeItemManager();
     }
@@ -127,7 +130,7 @@ public class GameController : MonoBehaviour
         if (itemManager != null)
         {
             // ItemManagerのイベントを登録
-            itemManager.OnAllItemsCollected += OnAllItemsCollected;
+            // itemManager.OnAllItemsCollected += OnAllItemsCollected; // GameRuleProcessorが直接処理
             itemManager.OnItemCountChanged += OnItemCountChanged;
             Debug.Log("ItemManager events registered");
         }
@@ -141,14 +144,6 @@ public class GameController : MonoBehaviour
     {
         Debug.Log($"Item progress: {collectedCount}/{totalCount}");
         // 必要に応じてUIを更新
-    }
-
-    private void OnAllItemsCollected()
-    {
-        Debug.Log("GameController: All items collected event received");
-        
-        // 直接ゲーム終了を実行（全クライアントで独立して判定）
-        EndGame();
     }
 
     // PlayerManagerからのイベントハンドラー
@@ -172,6 +167,9 @@ public class GameController : MonoBehaviour
     {
         Debug.Log($"🎯 GameController: Player count changed to {playerCount}");
         
+        // GameEventsを通じてUIに伝達
+        GameEvents.TriggerPlayerCountChanged(playerCount);
+        
         // ゲーム状態をチェック（これが主要なゲーム状態管理トリガー）
         if (networkGameManager != null && networkGameManager.NetworkRunner != null)
         {
@@ -183,35 +181,6 @@ public class GameController : MonoBehaviour
         }
     }
 
-    private void InitializePlayerScoreTexts()
-    {
-        // プレイヤーIDとUIテキストの対応を設定
-        if (scoreText1 != null)
-        {
-            playerScoreTexts[1] = scoreText1;
-            Debug.Log("Registered scoreText for Player 1");
-        }
-
-        if (scoreText2 != null)
-        {
-            playerScoreTexts[2] = scoreText2;
-            Debug.Log("Registered player2ScoreText for Player 2");
-        }
-
-        Debug.Log($"Total UI texts registered: {playerScoreTexts.Count}");
-    }
-
-    private IEnumerator RegisterExistingPlayers()
-    {
-        // PlayerManagerが自動的に処理するため、このメソッドは不要
-        yield break;
-    }
-
-    private IEnumerator ContinuousPlayerCheck()
-    {
-        // PlayerManagerが自動的に処理するため、このメソッドは不要
-        yield break;
-    }
 
     private void EndGame()
     {
@@ -226,43 +195,41 @@ public class GameController : MonoBehaviour
         // 全プレイヤーの入力を無効化
         EnableAllPlayersInput(false);
 
-        // 勝者を決定
-        DetermineWinner();
+        // GameRuleProcessorに勝者決定を委任
+        GameEvents.TriggerGameEnd();
     }
 
-    private void DetermineWinner()
+    // GameRuleProcessorからの勝者決定結果を受け取るハンドラー
+    private void OnWinnerDetermined(string resultMessage)
     {
-        Debug.Log("=== GameController: DetermineWinner called ===");
+        Debug.Log($"GameController: Winner determined - {resultMessage}");
         
-        if (playerManager == null)
-        {
-            Debug.LogError("GameController: PlayerManager is null, cannot determine winner");
-            return;
-        }
+        // GameEventsを通じて全クライアントに勝者メッセージを送信
+        Debug.Log($"GameController: Triggering GameEvents.TriggerWinnerDetermined for all clients");
+        GameEvents.TriggerWinnerDetermined(resultMessage);
+        
+        // ネットワーク経由でも全クライアントに送信（念のため）
+        BroadcastWinnerMessageViaRPC(resultMessage);
+    }
 
-        // PlayerManagerから勝者情報を取得
-        var winnerResult = playerManager.DetermineWinner();
-        int winnerId = winnerResult.winnerId;
-        int highestScore = winnerResult.highestScore;
-        List<int> tiedPlayers = winnerResult.tiedPlayers;
-
-        // 勝者の表示
-        string resultMessage;
-        if (tiedPlayers.Count > 1)
+    // RPC経由で勝者メッセージを全クライアントに送信
+    private void BroadcastWinnerMessageViaRPC(string message)
+    {
+        if (playerManager == null) return;
+        
+        // StateAuthorityを持つプレイヤーからRPCを送信
+        foreach (var playerPair in playerManager.AllPlayers)
         {
-            resultMessage = $"Draw! Players {string.Join(", ", tiedPlayers)} tied with {highestScore} points!";
+            var playerAvatar = playerPair.Value;
+            if (playerAvatar != null && playerAvatar.HasStateAuthority)
+            {
+                Debug.Log($"GameController: Sending winner message via RPC from Player {playerAvatar.playerId}");
+                playerAvatar.RPC_BroadcastWinnerMessage(message);
+                return;
+            }
         }
-        else
-        {
-            resultMessage = $"Winner: Player {winnerId} with {highestScore} points!";
-        }
-
-        Debug.Log($"GameController: {resultMessage}");
-
-        if (statusWindow != null)
-        {
-            statusWindow.text = resultMessage;
-        }
+        
+        Debug.LogWarning("GameController: No player with StateAuthority found for RPC broadcast");
     }
 
     /// <summary>
@@ -387,20 +354,10 @@ public class GameController : MonoBehaviour
 
     private void OnPlayerScoreChanged(int playerId, int newScore)
     {
-        Debug.Log($"OnPlayerScoreChanged called: Player {playerId}, Score {newScore}");
-
-        // Dictionaryから該当するUIテキストを取得
-        if (playerScoreTexts.TryGetValue(playerId, out TextMeshProUGUI targetScoreText))
-        {
-            targetScoreText.text = $"Player{playerId} Score: {newScore}";
-            Debug.Log($"Updated UI for Player {playerId}: {targetScoreText.text}");
-        }
-        else
-        {
-            Debug.LogWarning($"No UI text found for Player {playerId}. Available players: {string.Join(", ", playerScoreTexts.Keys)}");
-        }
-
-        Debug.Log($"Player {playerId} score updated to: {newScore}");
+        Debug.Log($"GameController: Player {playerId} score changed to {newScore}");
+        
+        // GameEventsを通じてUIに伝達
+        GameEvents.TriggerPlayerScoreChanged(playerId, newScore);
     }
 
     // テスト用メソッド：手動でスコアを変更
@@ -429,27 +386,27 @@ public class GameController : MonoBehaviour
         {
             case GameState.WaitingForPlayers:
                 Debug.Log("Waiting for players to join...");
-                if (statusWindow != null)
-                {
-                    int currentPlayers = playerManager != null ? playerManager.PlayerCount : 0;
-                    statusWindow.text = $"Waiting for players... ({currentPlayers}/{MAX_PLAYERS})";
-                }
+                
+                // GameEventsを通じてUIに伝達
+                GameEvents.TriggerGameStateChanged(newState);
+                
                 // ゲーム状態をリセット
                 ResetGameState();
                 break;
             case GameState.InGame:
                 Debug.Log("Game is now in progress.");
-                if (statusWindow != null)
-                {
-                    statusWindow.text = "Game in Progress!";
-                }
+                
+                // GameEventsを通じてUIに伝達
+                GameEvents.TriggerGameStateChanged(newState);
+                
                 Debug.Log("OnChangeState: About to enable all players input...");
                 EnableAllPlayersInput(true);
                 break;
             case GameState.GameOver:
                 Debug.Log("Game Over!");
                 // 勝者決定はEndGame()で既に実行済み
-                StartCoroutine(RestartGameAfterDelay());
+                // 自動再開は無効化（勝者メッセージを表示し続ける）
+                Debug.Log("GameController: Game ended, winner message will be displayed permanently");
                 break;
         }
     }
@@ -499,6 +456,13 @@ public class GameController : MonoBehaviour
             playerManager.OnPlayerUnregistered -= OnPlayerUnregistered;
             playerManager.OnPlayerScoreChanged -= OnPlayerScoreChanged;
             playerManager.OnPlayerCountChanged -= OnPlayerCountChanged;
+        }
+
+        // GameRuleProcessorのイベント登録解除
+        if (gameRuleProcessor != null)
+        {
+            gameRuleProcessor.OnGameEndTriggered -= EndGame;
+            gameRuleProcessor.OnWinnerDetermined -= OnWinnerDetermined;
         }
     }
 }

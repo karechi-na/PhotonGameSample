@@ -135,4 +135,13 @@ public class PlayerAvatar : NetworkBehaviour
         inputEnabled = enabled;
         Debug.Log($"Player {playerId} input set to: {enabled} (HasStateAuthority: {HasStateAuthority})");
     }
+
+    // RPCで勝者メッセージを全クライアントに送信
+    [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+    public void RPC_BroadcastWinnerMessage(string winnerMessage)
+    {
+        Debug.Log($"PlayerAvatar RPC_BroadcastWinnerMessage received: {winnerMessage}");
+        // GameEventsを通じて全クライアントに勝者メッセージを配信
+        GameEvents.TriggerWinnerDetermined(winnerMessage);
+    }
 }
