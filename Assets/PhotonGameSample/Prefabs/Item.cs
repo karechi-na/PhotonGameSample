@@ -46,17 +46,29 @@ public class Item : NetworkBehaviour    // ItemクラスはNetworkBehaviourを�
     }
     void OnTriggerEnter(Collider other)
     {
-        Debug.Log($"Item caught by {other.name}");
+        Debug.Log($"=== Item.OnTriggerEnter === Item '{name}' (InstanceID: {GetInstanceID()}) caught by {other.name}" +
+                  $"\n  HasStateAuthority: {Object.HasStateAuthority}" +
+                  $"\n  Unity Frame: {Time.frameCount}, Time: {Time.time:F3}s" +
+                  $"\n  Item value: {itemValue}");
+
+        // StateAuthorityを持つクライアントでのみアイテム処理を実行
+        if (!Object.HasStateAuthority)
+        {
+            Debug.Log($"=== Item.OnTriggerEnter SKIPPED === Item {GetInstanceID()} - No StateAuthority, skipping processing");
+            return;
+        }
 
         // アイテムがキャッチされたときの処理
         if (other.TryGetComponent(out ItemCatcher itemCatcher))
         {
+            Debug.Log($"=== Item calling ItemCatcher.ItemCought === Item {GetInstanceID()} -> Player {other.name}");
             // アイテムキャッチャーのイベントを呼び出す
             itemCatcher.ItemCought(this);
             gameObject.SetActive(false); // アイテムを非アクティブにする
 
             // アイテムを削除
             Runner.Despawn(Object);
+            Debug.Log($"=== Item despawned === Item {GetInstanceID()}");
         }
     }
 }

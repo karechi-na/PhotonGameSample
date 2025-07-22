@@ -114,6 +114,9 @@ public class PlayerManager : MonoBehaviour
             // イベント発火
             OnPlayerRegistered?.Invoke(avatar);
             OnPlayerCountChanged?.Invoke(allPlayerAvatars.Count);
+            
+            // GameEventsも発火
+            GameEvents.TriggerPlayerRegistered(avatar.playerId);
 
             // 初期スコアもイベントで通知
             HandlePlayerScoreChanged(avatar.playerId, avatar.Score);
@@ -151,8 +154,11 @@ public class PlayerManager : MonoBehaviour
     /// </summary>
     private void HandlePlayerScoreChanged(int playerId, int newScore)
     {
-        Debug.Log($"PlayerManager: Player {playerId} score changed to {newScore}");
+        Debug.Log($"PlayerManager: Player {playerId} score changed to {newScore} - forwarding to GameController");
         OnPlayerScoreChanged?.Invoke(playerId, newScore);
+        
+        // GameEventsは GameController 経由で発火されるため、ここでは削除
+        // GameEvents.TriggerPlayerScoreChanged(playerId, newScore);
     }
 
     /// <summary>
@@ -236,6 +242,19 @@ public class PlayerManager : MonoBehaviour
         Debug.Log("=== PlayerManager: DetermineWinner called ===" +
                   $"\n  Total registered players: {allPlayerAvatars.Count}");
         
+        // まず現在のプレイヤースコア情報を確認
+        foreach (var kvp in allPlayerAvatars)
+        {
+            var avatar = kvp.Value;
+            if (avatar != null)
+            {
+                Debug.Log($"PlayerManager: Pre-check - Player {kvp.Key} current score: {avatar.Score}" +
+                          $"\n  HasStateAuthority: {avatar.HasStateAuthority}" +
+                          $"\n  IsSpawned: {avatar.Object?.IsValid}" +
+                          $"\n  Unity Frame: {Time.frameCount}, Time: {Time.time:F3}s");
+            }
+        }
+        
         int highestScore = -1;
         int winnerId = -1;
         List<int> tiedPlayers = new List<int>();
@@ -249,20 +268,27 @@ public class PlayerManager : MonoBehaviour
                 int score = avatar.Score;
                 Debug.Log($"=== PlayerManager: Player {avatarPair.Key} final score: {score} ===" +
                           $"\n  HasStateAuthority: {avatar.HasStateAuthority}" +
-                          $"\n  NickName: {avatar.NickName.Value}");
+                          $"\n  NickName: {avatar.NickName.Value}" +
+                          $"\n  Unity Frame: {Time.frameCount}, Time: {Time.time:F3}s");
 
                 if (score > highestScore)
                 {
+                    Debug.Log($"PlayerManager: Score {score} > current highest {highestScore} - updating highest");
                     highestScore = score;
                     winnerId = avatarPair.Key;
                     tiedPlayers.Clear();
                     tiedPlayers.Add(winnerId);
                     Debug.Log($"PlayerManager: New highest score: Player {winnerId} with {highestScore} points");
                 }
-                else if (score == highestScore)
+                else if (score == highestScore && highestScore >= 0) // 0点以上で同点の場合
                 {
+                    Debug.Log($"PlayerManager: Score {score} == current highest {highestScore} - adding to tied players");
                     tiedPlayers.Add(avatarPair.Key);
                     Debug.Log($"PlayerManager: Tie detected: Player {avatarPair.Key} also has {score} points");
+                }
+                else
+                {
+                    Debug.Log($"PlayerManager: Score {score} <= current highest {highestScore} - no change");
                 }
             }
             else
@@ -275,6 +301,14 @@ public class PlayerManager : MonoBehaviour
                   $"\n  Highest Score: {highestScore}" +
                   $"\n  Winner: {winnerId}" +
                   $"\n  Tied Players: [{string.Join(", ", tiedPlayers)}]");
+
+        // 引き分け判定：複数のプレイヤーが同じ最高スコアの場合
+        if (tiedPlayers.Count > 1)
+        {
+            Debug.Log($"PlayerManager: Tie detected! {tiedPlayers.Count} players have the same highest score: {highestScore}");
+            winnerId = -1; // 引き分けを示す
+        }
+        
         return (winnerId, highestScore, tiedPlayers);
     }
 

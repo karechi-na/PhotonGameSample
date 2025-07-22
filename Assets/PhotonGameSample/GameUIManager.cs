@@ -5,11 +5,16 @@ using System.Collections.Generic;
 public class GameUIManager : MonoBehaviour
 {
     [SerializeField] private TextMeshProUGUI statusWindow;
-    [SerializeField] private GameObject playerScorePrefab;
-    [SerializeField] private Transform playerScoreParent;
+    
+    [Header("Player Score UI References")]
+    [SerializeField] private TextMeshProUGUI player1ScoreText;
+    [SerializeField] private TextMeshProUGUI player2ScoreText;
 
     private Dictionary<int, TextMeshProUGUI> playerScoreTexts = new Dictionary<int, TextMeshProUGUI>();
     private bool winnerMessageDisplayed = false; // 勝者メッセージが表示されているかのフラグ
+    
+    // デバッグ用：UpdatePlayerScoreUI呼び出し回数をトラッキング
+    private int updateScoreUICallCount = 0;
 
     void Awake()
     {
@@ -21,6 +26,7 @@ public class GameUIManager : MonoBehaviour
         GameEvents.OnPlayerScoreChanged += UpdatePlayerScoreUI;
         GameEvents.OnWinnerDetermined += DisplayWinnerMessage;
         GameEvents.OnPlayerCountChanged += UpdateWaitingStatus;
+        GameEvents.OnPlayerRegistered += CreatePlayerScoreUI; // プレイヤー登録時にUI作成
     }
 
     void Start()
@@ -31,9 +37,30 @@ public class GameUIManager : MonoBehaviour
 
     private void InitializePlayerScoreTexts()
     {
-        // プレイヤースコア用のUIテキストが既に存在する場合は辞書に登録
-        // 動的にプレイヤーが追加される場合は OnPlayerRegistered で作成
-        Debug.Log($"GameUIManager: Initialized player score texts dictionary");
+        // SerializeFieldで設定されたプレイヤースコアUIを辞書に登録
+        if (player1ScoreText != null)
+        {
+            playerScoreTexts[1] = player1ScoreText;
+            player1ScoreText.text = "Player1 Score: 0";
+            Debug.Log("GameUIManager: Registered Player1 score UI");
+        }
+        else
+        {
+            Debug.LogWarning("GameUIManager: Player1 score text is not assigned!");
+        }
+
+        if (player2ScoreText != null)
+        {
+            playerScoreTexts[2] = player2ScoreText;
+            player2ScoreText.text = "Player2 Score: 0";
+            Debug.Log("GameUIManager: Registered Player2 score UI");
+        }
+        else
+        {
+            Debug.LogWarning("GameUIManager: Player2 score text is not assigned!");
+        }
+        
+        Debug.Log($"GameUIManager: Initialized {playerScoreTexts.Count} player score UI elements");
     }
 
     private void UpdateStatusWindow(GameState newState)
@@ -74,16 +101,69 @@ public class GameUIManager : MonoBehaviour
         }
     }
 
-    private void UpdatePlayerScoreUI(int playerId, int newScore)
+    // プレイヤー登録時の処理（SerializeField使用時は事前作成済みなので確認のみ）
+    private void CreatePlayerScoreUI(int playerId)
     {
-        if (playerScoreTexts.TryGetValue(playerId, out TextMeshProUGUI targetScoreText))
+        Debug.Log($"GameUIManager: Checking score UI for Player {playerId}");
+        
+        if (playerScoreTexts.ContainsKey(playerId))
         {
-            targetScoreText.text = $"Player{playerId} Score: {newScore}";
-            Debug.Log($"GameUIManager: Updated UI for Player {playerId}: {targetScoreText.text}");
+            Debug.Log($"GameUIManager: Score UI for Player {playerId} already exists");
+            return;
+        }
+
+        // SerializeFieldで設定されているはずのUIを確認
+        TextMeshProUGUI scoreText = null;
+        if (playerId == 1 && player1ScoreText != null)
+        {
+            scoreText = player1ScoreText;
+        }
+        else if (playerId == 2 && player2ScoreText != null)
+        {
+            scoreText = player2ScoreText;
+        }
+
+        if (scoreText != null)
+        {
+            playerScoreTexts[playerId] = scoreText;
+            scoreText.text = $"Player{playerId} Score: 0";
+            Debug.Log($"GameUIManager: ✅ Registered score UI for Player {playerId}");
         }
         else
         {
-            Debug.LogWarning($"GameUIManager: No UI text found for Player {playerId}.");
+            Debug.LogError($"GameUIManager: No SerializeField reference found for Player {playerId}! " +
+                          $"Please assign player{playerId}ScoreText in the inspector.");
+        }
+    }
+
+    private void UpdatePlayerScoreUI(int playerId, int newScore)
+    {
+        updateScoreUICallCount++;
+        Debug.Log($"=== GameUIManager.UpdatePlayerScoreUI #{updateScoreUICallCount} === Player {playerId}, Score {newScore}" +
+                  $"\n  Unity Frame: {Time.frameCount}, Time: {Time.time:F3}s" +
+                  $"\n  Available score UIs: [{string.Join(", ", playerScoreTexts.Keys)}]" +
+                  $"\n  Stack trace: {System.Environment.StackTrace}");
+        
+        if (playerScoreTexts.TryGetValue(playerId, out TextMeshProUGUI targetScoreText))
+        {
+            string oldText = targetScoreText.text;
+            targetScoreText.text = $"Player{playerId} Score: {newScore}";
+            Debug.Log($"GameUIManager: ✅ Updated UI #{updateScoreUICallCount} for Player {playerId}: '{oldText}' -> '{targetScoreText.text}'");
+        }
+        else
+        {
+            Debug.LogWarning($"GameUIManager: ❌ No UI text found for Player {playerId}. " +
+                           $"Available players: [{string.Join(", ", playerScoreTexts.Keys)}]");
+            // UI作成を試みる
+            Debug.Log($"GameUIManager: Attempting to create missing UI for Player {playerId}");
+            CreatePlayerScoreUI(playerId);
+            
+            // 再度更新を試みる
+            if (playerScoreTexts.TryGetValue(playerId, out targetScoreText))
+            {
+                targetScoreText.text = $"Player{playerId} Score: {newScore}";
+                Debug.Log($"GameUIManager: ✅ Created and updated UI for Player {playerId}: {targetScoreText.text}");
+            }
         }
     }
 
@@ -94,7 +174,16 @@ public class GameUIManager : MonoBehaviour
         {
             statusWindow.text = message;
             winnerMessageDisplayed = true; // フラグを設定
-            Debug.Log($"GameUIManager: Winner message displayed and flag set: {message}");
+            
+            // 引き分けかどうかを判定してログ出力
+            if (message.Contains("引き分け"))
+            {
+                Debug.Log($"GameUIManager: ✅ Tie game message displayed: {message}");
+            }
+            else
+            {
+                Debug.Log($"GameUIManager: ✅ Winner message displayed: {message}");
+            }
         }
         else
         {
@@ -115,5 +204,6 @@ public class GameUIManager : MonoBehaviour
         GameEvents.OnPlayerScoreChanged -= UpdatePlayerScoreUI;
         GameEvents.OnWinnerDetermined -= DisplayWinnerMessage;
         GameEvents.OnPlayerCountChanged -= UpdateWaitingStatus;
+        GameEvents.OnPlayerRegistered -= CreatePlayerScoreUI;
     }
 }

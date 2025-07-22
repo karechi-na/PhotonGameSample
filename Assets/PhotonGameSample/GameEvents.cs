@@ -14,8 +14,14 @@ public static class GameEvents
     // プレイヤー数変更イベント
     public static event Action<int> OnPlayerCountChanged; // (playerCount)
     
+    // プレイヤー登録イベント
+    public static event Action<int> OnPlayerRegistered; // (playerId)
+    
     // ゲーム終了イベント
     public static event Action OnGameEnd; // ゲーム終了時
+    
+    // スコア更新完了イベント
+    public static event Action<int, int> OnScoreUpdateCompleted; // (playerId, newScore)
 
     // イベント発火メソッド
     public static void TriggerGameStateChanged(GameState newState)
@@ -38,8 +44,18 @@ public static class GameEvents
         OnPlayerCountChanged?.Invoke(playerCount);
     }
 
+    public static void TriggerPlayerRegistered(int playerId)
+    {
+        OnPlayerRegistered?.Invoke(playerId);
+    }
+
     public static void TriggerGameEnd()
     {
         OnGameEnd?.Invoke();
+    }
+    
+    public static void TriggerScoreUpdateCompleted(int playerId, int newScore)
+    {
+        OnScoreUpdateCompleted?.Invoke(playerId, newScore);
     }
 }

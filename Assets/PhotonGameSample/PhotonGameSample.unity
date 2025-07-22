@@ -1009,8 +1009,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   statusWindow: {fileID: 1510939066}
-  scoreText1: {fileID: 1007007604}
-  scoreText2: {fileID: 1613079113}
+  player1ScoreText: {fileID: 1007007604}
+  player2ScoreText: {fileID: 1613079113}
 --- !u!114 &1092109765
 MonoBehaviour:
   m_ObjectHideFlags: 0

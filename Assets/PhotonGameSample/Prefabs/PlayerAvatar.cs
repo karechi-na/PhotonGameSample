@@ -1,6 +1,7 @@
 using Fusion;
 using UnityEngine;
 using System;
+using System.Collections.Generic;
 
 public class PlayerAvatar : NetworkBehaviour
 {
@@ -21,14 +22,27 @@ public class PlayerAvatar : NetworkBehaviour
     public event Action<int, int> OnScoreChanged; // (playerId, newScore)
 
     private int previousScore = 0;
+    
+    // アイテム取得重複防止用
+    private HashSet<int> processedItems = new HashSet<int>();
+    
+    // デバッグ用：OnItemCaught呼び出し回数をトラッキング
+    private int onItemCaughtCallCount = 0;
 
     // ネットワークプロパティ変更時のコールバック
     private void OnScoreChangedRender()
     {
-        Debug.Log($"OnScoreChangedRender called for Player {playerId}: {previousScore} -> {Score}" +
-                  $"\n  OnScoreChanged event subscribers: {OnScoreChanged?.GetInvocationList()?.Length ?? 0}");
+        int scoreDiff = Score - previousScore;
+        Debug.Log($"=== OnScoreChangedRender #{onItemCaughtCallCount} === Player {playerId} ({NickName.Value}): {previousScore} -> {Score} (diff: {scoreDiff:+#;-#;0})" +
+                  $"\n  HasStateAuthority: {HasStateAuthority}" +
+                  $"\n  OnScoreChanged event subscribers: {OnScoreChanged?.GetInvocationList()?.Length ?? 0}" +
+                  $"\n  Unity Frame: {Time.frameCount}, Time: {Time.time:F3}s");
+        
         OnScoreChanged?.Invoke(playerId, Score);
         previousScore = Score;
+        
+        // スコア更新完了を通知（ゲーム終了判定で使用）
+        GameEvents.TriggerScoreUpdateCompleted(playerId, Score);
     }
 
     public override void Spawned()
@@ -67,23 +81,61 @@ public class PlayerAvatar : NetworkBehaviour
 
     private void OnItemCaught(Item item, PlayerAvatar playerAvatar)
     {
-        Debug.Log($"=== OnItemCaught called ==="
+        onItemCaughtCallCount++;
+        
+        // アイテムの重複処理防止チェック
+        int itemInstanceId = item.GetInstanceID();
+        
+        Debug.Log($"=== OnItemCaught #{onItemCaughtCallCount} START ==="
             + $"\nPlayer {playerId} ({NickName.Value}) caught item"
+            + $"\nItem InstanceID: {itemInstanceId}"
+            + $"\nItem name: {item.name}"
             + $"\nItem value: {item.itemValue}"
             + $"\nHasStateAuthority: {HasStateAuthority}"
-            + $"\nCurrent Score before: {Score}");
+            + $"\nCurrent Score before: {Score}"
+            + $"\nProcessed items: [{string.Join(", ", processedItems)}]"
+            + $"\nProcessed items count: {processedItems.Count}"
+            + $"\nUnity Frame: {Time.frameCount}, Time: {Time.time:F3}s"
+            + $"\nStack trace: {Environment.StackTrace}");
         
+        if (processedItems.Contains(itemInstanceId))
+        {
+            Debug.LogWarning($"=== DUPLICATE ITEM PROCESSING DETECTED === Player {playerId} already processed item {itemInstanceId}");
+            return;
+        }
+        processedItems.Add(itemInstanceId);
+
         if (HasStateAuthority)
         {
-            // スコアを加算（ネットワーク同期される）
+            // 自分がStateAuthorityを持つ場合：直接スコア更新
             int oldScore = Score;
             Score += item.itemValue;
-            Debug.Log($"=== SCORE UPDATED === Player {playerId} caught item! Score: {oldScore} -> {Score}");
+            Debug.Log($"=== SCORE UPDATED (StateAuth) #{onItemCaughtCallCount} === Player {playerId} caught item! Score: {oldScore} -> {Score} (diff: +{Score - oldScore})");
         }
         else
         {
-            Debug.Log($"Player {playerId} does not have state authority - score not updated");
+            // StateAuthorityを持たない場合：RPC経由でスコア更新を要求
+            Debug.Log($"=== RPC REQUEST #{onItemCaughtCallCount} === Player {playerId} does not have state authority - requesting score update via RPC");
+            RPC_UpdateScore(item.itemValue);
         }
+        
+        Debug.Log($"=== OnItemCaught #{onItemCaughtCallCount} END ===");
+    }
+
+    // RPC経由でスコア更新（StateAuthorityを持たないプレイヤー用）
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    private void RPC_UpdateScore(int itemValue)
+    {
+        Debug.Log($"=== RPC_UpdateScore START === Player {playerId} ({NickName.Value}): adding {itemValue} points");
+        Debug.Log($"HasStateAuthority: {HasStateAuthority}");
+        Debug.Log($"Current Score before RPC: {Score}");
+        Debug.Log($"Unity Frame: {Time.frameCount}, Time: {Time.time:F3}s");
+        Debug.Log($"RPC Stack trace: {Environment.StackTrace}");
+        
+        int oldScore = Score;
+        Score += itemValue;
+        
+        Debug.Log($"=== RPC_UpdateScore END === Score updated via RPC: {oldScore} -> {Score} (diff: +{Score - oldScore})");
     }
 
     public override void FixedUpdateNetwork()
@@ -97,7 +149,7 @@ public class PlayerAvatar : NetworkBehaviour
             // 入力があった場合のみログ出力
             if (inputDirection.magnitude > 0.01f)
             {
-                Debug.Log($"Player {playerId}: Moving with input {inputDirection}");
+                // Debug.Log($"Player {playerId}: Moving with input {inputDirection}");
             }
             
             characterController.Move(cameraRotation * inputDirection);

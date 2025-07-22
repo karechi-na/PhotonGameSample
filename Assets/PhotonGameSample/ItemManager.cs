@@ -51,8 +51,15 @@ public class ItemManager : MonoBehaviour
     /// </summary>
     private void HandleItemCaught(Item item, PlayerAvatar player)
     {
-        Debug.Log($"ItemManager: Player {player.NickName.Value} caught an item");
+        Debug.Log($"=== ItemManager: HandleItemCaught ===");
+        Debug.Log($"Player: {player.NickName.Value} (ID: {player.playerId})");
+        Debug.Log($"Item value: {item.itemValue}");
+        Debug.Log($"Player score before: {player.Score}");
+        
         OnItemCollected(item, player);
+        
+        // アイテム収集後のスコアもログ出力
+        Debug.Log($"Player score after item collection: {player.Score}");
     }
     
     /// <summary>
