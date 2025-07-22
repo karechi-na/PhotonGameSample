@@ -33,10 +33,7 @@ public class PlayerAvatar : NetworkBehaviour
     private void OnScoreChangedRender()
     {
         int scoreDiff = Score - previousScore;
-        Debug.Log($"=== OnScoreChangedRender #{onItemCaughtCallCount} === Player {playerId} ({NickName.Value}): {previousScore} -> {Score} (diff: {scoreDiff:+#;-#;0})" +
-                  $"\n  HasStateAuthority: {HasStateAuthority}" +
-                  $"\n  OnScoreChanged event subscribers: {OnScoreChanged?.GetInvocationList()?.Length ?? 0}" +
-                  $"\n  Unity Frame: {Time.frameCount}, Time: {Time.time:F3}s");
+        Debug.Log($"PlayerAvatar: Player {playerId} score {previousScore} -> {Score} (diff: {scoreDiff:+#;-#;0})");
         
         OnScoreChanged?.Invoke(playerId, Score);
         previousScore = Score;
@@ -47,10 +44,7 @@ public class PlayerAvatar : NetworkBehaviour
 
     public override void Spawned()
     {
-        Debug.Log($"🚀 PlayerAvatar.Spawned() called for Player {playerId}" +
-                  $"\n  HasStateAuthority: {HasStateAuthority}" +
-                  $"\n  NickName: '{NickName.Value}'" +
-                  $"\n  Score: {Score}");
+        Debug.Log($"PlayerAvatar: Player {playerId} spawned (Authority: {HasStateAuthority})");
         
         characterController = GetComponent<NetworkCharacterController>();
         networkAnimator = GetComponentInChildren<NetworkMecanimAnimator>();
@@ -60,11 +54,6 @@ public class PlayerAvatar : NetworkBehaviour
         if (HasStateAuthority)
         {
             view.MakeCameraTarget();
-            Debug.Log($"Player {playerId}: Set as camera target (has state authority)");
-        }
-        else
-        {
-            Debug.Log($"Player {playerId}: Not camera target (no state authority)");
         }
 
         // ItemCatcherのイベントをサブスクライブ
@@ -75,8 +64,6 @@ public class PlayerAvatar : NetworkBehaviour
         }
 
         previousScore = Score;
-        
-        Debug.Log($"✅ PlayerAvatar {playerId} spawned successfully and ready for registration");
     }
 
     private void OnItemCaught(Item item, PlayerAvatar playerAvatar)
@@ -86,56 +73,40 @@ public class PlayerAvatar : NetworkBehaviour
         // アイテムの重複処理防止チェック
         int itemInstanceId = item.GetInstanceID();
         
-        Debug.Log($"=== OnItemCaught #{onItemCaughtCallCount} START ==="
-            + $"\nPlayer {playerId} ({NickName.Value}) caught item"
-            + $"\nItem InstanceID: {itemInstanceId}"
-            + $"\nItem name: {item.name}"
-            + $"\nItem value: {item.itemValue}"
-            + $"\nHasStateAuthority: {HasStateAuthority}"
-            + $"\nCurrent Score before: {Score}"
-            + $"\nProcessed items: [{string.Join(", ", processedItems)}]"
-            + $"\nProcessed items count: {processedItems.Count}"
-            + $"\nUnity Frame: {Time.frameCount}, Time: {Time.time:F3}s"
-            + $"\nStack trace: {Environment.StackTrace}");
-        
         if (processedItems.Contains(itemInstanceId))
         {
-            Debug.LogWarning($"=== DUPLICATE ITEM PROCESSING DETECTED === Player {playerId} already processed item {itemInstanceId}");
+            Debug.LogWarning($"PlayerAvatar: Player {playerId} - duplicate item {itemInstanceId} detected, skipping");
             return;
         }
         processedItems.Add(itemInstanceId);
+
+        Debug.Log($"PlayerAvatar: Player {playerId} caught item (value: {item.itemValue})");
 
         if (HasStateAuthority)
         {
             // 自分がStateAuthorityを持つ場合：直接スコア更新
             int oldScore = Score;
             Score += item.itemValue;
-            Debug.Log($"=== SCORE UPDATED (StateAuth) #{onItemCaughtCallCount} === Player {playerId} caught item! Score: {oldScore} -> {Score} (diff: +{Score - oldScore})");
+            Debug.Log($"PlayerAvatar: Score updated directly {oldScore} -> {Score}");
         }
         else
         {
             // StateAuthorityを持たない場合：RPC経由でスコア更新を要求
-            Debug.Log($"=== RPC REQUEST #{onItemCaughtCallCount} === Player {playerId} does not have state authority - requesting score update via RPC");
+            Debug.Log($"PlayerAvatar: Player {playerId} requesting score update via RPC");
             RPC_UpdateScore(item.itemValue);
         }
-        
-        Debug.Log($"=== OnItemCaught #{onItemCaughtCallCount} END ===");
     }
 
     // RPC経由でスコア更新（StateAuthorityを持たないプレイヤー用）
     [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
     private void RPC_UpdateScore(int itemValue)
     {
-        Debug.Log($"=== RPC_UpdateScore START === Player {playerId} ({NickName.Value}): adding {itemValue} points");
-        Debug.Log($"HasStateAuthority: {HasStateAuthority}");
-        Debug.Log($"Current Score before RPC: {Score}");
-        Debug.Log($"Unity Frame: {Time.frameCount}, Time: {Time.time:F3}s");
-        Debug.Log($"RPC Stack trace: {Environment.StackTrace}");
+        Debug.Log($"PlayerAvatar: RPC score update for Player {playerId} (+{itemValue})");
         
         int oldScore = Score;
         Score += itemValue;
         
-        Debug.Log($"=== RPC_UpdateScore END === Score updated via RPC: {oldScore} -> {Score} (diff: +{Score - oldScore})");
+        Debug.Log($"PlayerAvatar: RPC score updated {oldScore} -> {Score}");
     }
 
     public override void FixedUpdateNetwork()
@@ -185,14 +156,13 @@ public class PlayerAvatar : NetworkBehaviour
     public void SetInputEnabled(bool enabled)
     {
         inputEnabled = enabled;
-        Debug.Log($"Player {playerId} input set to: {enabled} (HasStateAuthority: {HasStateAuthority})");
     }
 
     // RPCで勝者メッセージを全クライアントに送信
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
     public void RPC_BroadcastWinnerMessage(string winnerMessage)
     {
-        Debug.Log($"PlayerAvatar RPC_BroadcastWinnerMessage received: {winnerMessage}");
+        Debug.Log($"PlayerAvatar: Winner message received - {winnerMessage}");
         // GameEventsを通じて全クライアントに勝者メッセージを配信
         GameEvents.TriggerWinnerDetermined(winnerMessage);
     }

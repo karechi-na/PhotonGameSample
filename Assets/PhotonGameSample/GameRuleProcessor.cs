@@ -40,13 +40,12 @@ public class GameRuleProcessor : MonoBehaviour
     // アイテム収集によるゲーム終了のトリガー
     public void TriggerGameEndByRule()
     {
-        Debug.Log("GameRuleProcessor: All items collected, triggering game end.");
+        Debug.Log("GameRuleProcessor: All items collected - ending game");
         
         // ゲーム終了をGameControllerに通知
         OnGameEndTriggered?.Invoke();
         
         // スコア更新の完了を待ってから勝者決定
-        Debug.Log("GameRuleProcessor: All items collected - waiting for score updates to complete");
         isWaitingForScoreUpdate = true;
         
         // タイムアウト処理を開始
@@ -56,17 +55,16 @@ public class GameRuleProcessor : MonoBehaviour
     // GameControllerからゲーム終了の指示を受けた場合
     private void HandleGameEndedByController()
     {
-        Debug.Log("GameRuleProcessor: Game ended by controller.");
+        Debug.Log("GameRuleProcessor: Game ended by controller");
         
         // すでにスコア更新待ち状態の場合は何もしない（重複防止）
         if (isWaitingForScoreUpdate)
         {
-            Debug.Log("GameRuleProcessor: Already waiting for score update, ignoring duplicate game end signal");
+            Debug.Log("GameRuleProcessor: Already waiting for score update");
             return;
         }
         
         // スコア更新の完了を待ってから勝者決定
-        Debug.Log("GameRuleProcessor: Controller triggered game end - waiting for score updates to complete");
         isWaitingForScoreUpdate = true;
         
         // タイムアウト処理を開始
@@ -78,15 +76,11 @@ public class GameRuleProcessor : MonoBehaviour
     {
         if (isWaitingForScoreUpdate)
         {
-            Debug.Log($"GameRuleProcessor: Score update completed for Player {playerId} -> {newScore}, proceeding with winner determination");
+            Debug.Log($"GameRuleProcessor: Score update completed for Player {playerId} -> {newScore}");
             isWaitingForScoreUpdate = false;
             
             // 他のスコア更新イベントが続いて発生する可能性があるので、少し遅延
             StartCoroutine(DelayedWinnerDetermination());
-        }
-        else
-        {
-            Debug.Log($"GameRuleProcessor: Score update completed for Player {playerId} -> {newScore}, but not waiting for updates");
         }
     }
     
@@ -99,12 +93,7 @@ public class GameRuleProcessor : MonoBehaviour
         // 遅延中に再度待機状態になった場合はスキップ
         if (!isWaitingForScoreUpdate)
         {
-            Debug.Log("GameRuleProcessor: Executing delayed winner determination");
             DetermineWinner();
-        }
-        else
-        {
-            Debug.Log("GameRuleProcessor: Delayed winner determination skipped - waiting state reset");
         }
     }
     
@@ -131,11 +120,11 @@ public class GameRuleProcessor : MonoBehaviour
     {
         if (isProcessingWinnerDetermination)
         {
-            Debug.Log("GameRuleProcessor: DetermineWinner already in progress, skipping duplicate call");
+            Debug.Log("GameRuleProcessor: Winner determination already in progress");
             return;
         }
         
-        Debug.Log("GameRuleProcessor: DetermineWinner called - adding delay for network sync");
+        Debug.Log("GameRuleProcessor: Determining winner...");
         isProcessingWinnerDetermination = true;
         
         // ネットワーク同期を待つために少し遅延

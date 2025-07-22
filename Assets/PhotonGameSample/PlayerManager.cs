@@ -29,11 +29,7 @@ public class PlayerManager : MonoBehaviour
 
     void Start()
     {
-        Debug.Log("PlayerManager: Start() called");
-        Debug.Log("PlayerManager: Waiting for NetworkGameManager to spawn players...");
-        
-        // FindObjectsByTypeによる自動検索は行わず、
-        // NetworkGameManager経由でのRegisterPlayerAvatarの呼び出しのみに依存
+        Debug.Log("PlayerManager: Started");
         
         // 継続的なプレイヤーチェックは開始（フォールバック用）
         StartCoroutine(ContinuousPlayerCheck());
@@ -58,27 +54,13 @@ public class PlayerManager : MonoBehaviour
 
             var allAvatars = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
             
-            // 5回に1回詳細ログを表示（ログが多すぎるのを防ぐため）
-            bool showDetailedLog = (checkCount % 5 == 0);
-            
-            if (showDetailedLog)
-            {
-                Debug.Log($"PlayerManager: ContinuousPlayerCheck #{checkCount} (FALLBACK) - Found {allAvatars.Length} total avatars, {allPlayerAvatars.Count} registered");
-            }
-            
             foreach (var avatar in allAvatars)
             {
                 if (avatar != null && !allPlayerAvatars.ContainsKey(avatar.playerId))
                 {
-                    Debug.Log($"PlayerManager: 🔍 FALLBACK - Found unregistered player {avatar.playerId} (HasStateAuthority: {avatar.HasStateAuthority}, NickName: '{avatar.NickName.Value}'), registering...");
+                    Debug.Log($"PlayerManager: Found unregistered player {avatar.playerId}, registering...");
                     RegisterPlayerAvatar(avatar);
                 }
-            }
-            
-            // 登録状況を定期報告（MAX_PLAYERSに満たない場合のみ）
-            if (allPlayerAvatars.Count > 0 && allPlayerAvatars.Count < MAX_PLAYERS && showDetailedLog)
-            {
-                Debug.Log($"PlayerManager: Current registered players: [{string.Join(", ", allPlayerAvatars.Keys)}] - Still looking for more players...");
             }
         }
     }
@@ -88,28 +70,18 @@ public class PlayerManager : MonoBehaviour
     /// </summary>
     public void RegisterPlayerAvatar(PlayerAvatar avatar)
     {
-        Debug.Log($"PlayerManager: RegisterPlayerAvatar called for avatar with ID {avatar?.playerId}");
-        
         if (avatar == null)
         {
             Debug.LogError("PlayerManager: RegisterPlayerAvatar called with null avatar!");
             return;
         }
         
-        Debug.Log($"PlayerManager: Attempting to register Player {avatar.playerId}" +
-                  $"\n  HasStateAuthority: {avatar.HasStateAuthority}" +
-                  $"\n  NickName: '{avatar.NickName.Value}'" +
-                  $"\n  Current Score: {avatar.Score}" +
-                  $"\n  Already registered? {allPlayerAvatars.ContainsKey(avatar.playerId)}");
-        
         if (!allPlayerAvatars.ContainsKey(avatar.playerId))
         {
             allPlayerAvatars[avatar.playerId] = avatar;
             avatar.OnScoreChanged += HandlePlayerScoreChanged;
 
-            Debug.Log($"PlayerManager: ✅ Successfully registered Player {avatar.playerId}" +
-                      $"\n  Total players: {allPlayerAvatars.Count}" +
-                      $"\n  Current score: {avatar.Score}");
+            Debug.Log($"PlayerManager: Registered Player {avatar.playerId} (Total: {allPlayerAvatars.Count})");
 
             // イベント発火
             OnPlayerRegistered?.Invoke(avatar);
@@ -120,10 +92,6 @@ public class PlayerManager : MonoBehaviour
 
             // 初期スコアもイベントで通知
             HandlePlayerScoreChanged(avatar.playerId, avatar.Score);
-        }
-        else
-        {
-            Debug.Log($"PlayerManager: Player {avatar.playerId} already registered - skipping");
         }
     }
 
@@ -154,7 +122,6 @@ public class PlayerManager : MonoBehaviour
     /// </summary>
     private void HandlePlayerScoreChanged(int playerId, int newScore)
     {
-        Debug.Log($"PlayerManager: Player {playerId} score changed to {newScore} - forwarding to GameController");
         OnPlayerScoreChanged?.Invoke(playerId, newScore);
         
         // GameEventsは GameController 経由で発火されるため、ここでは削除
@@ -166,13 +133,9 @@ public class PlayerManager : MonoBehaviour
     /// </summary>
     public void SetAllPlayersInputEnabled(bool enabled)
     {
-        Debug.Log($"==== PlayerManager: SetAllPlayersInputEnabled called with enabled={enabled} ====" +
-                  $"\n  Total players to update: {allPlayerAvatars.Count}" +
-                  $"\n  Registered player IDs: [{string.Join(", ", allPlayerAvatars.Keys)}]");
-        
         if (allPlayerAvatars.Count == 0)
         {
-            Debug.LogWarning("PlayerManager: No players registered! Cannot enable/disable input.");
+            Debug.LogWarning("PlayerManager: No players registered!");
             return;
         }
         
@@ -181,19 +144,9 @@ public class PlayerManager : MonoBehaviour
             var avatar = avatarPair.Value;
             if (avatar != null)
             {
-                Debug.Log($"PlayerManager: Updating Player {avatarPair.Key}" +
-                          $"\n  HasStateAuthority: {avatar.HasStateAuthority}" +
-                          $"\n  Input {(enabled ? "enabled" : "disabled")}");
                 avatar.SetInputEnabled(enabled);
             }
-            else
-            {
-                Debug.LogWarning($"PlayerManager: Player {avatarPair.Key} avatar is null!");
-            }
         }
-        
-        Debug.Log($"PlayerManager: SetAllPlayersInputEnabled completed for {allPlayerAvatars.Count} players" +
-                  $"\n==== PlayerManager: SetAllPlayersInputEnabled finished ====");
     }
 
     /// <summary>
@@ -239,74 +192,44 @@ public class PlayerManager : MonoBehaviour
     /// </summary>
     public (int winnerId, int highestScore, List<int> tiedPlayers) DetermineWinner()
     {
-        Debug.Log("=== PlayerManager: DetermineWinner called ===" +
-                  $"\n  Total registered players: {allPlayerAvatars.Count}");
-        
-        // まず現在のプレイヤースコア情報を確認
-        foreach (var kvp in allPlayerAvatars)
-        {
-            var avatar = kvp.Value;
-            if (avatar != null)
-            {
-                Debug.Log($"PlayerManager: Pre-check - Player {kvp.Key} current score: {avatar.Score}" +
-                          $"\n  HasStateAuthority: {avatar.HasStateAuthority}" +
-                          $"\n  IsSpawned: {avatar.Object?.IsValid}" +
-                          $"\n  Unity Frame: {Time.frameCount}, Time: {Time.time:F3}s");
-            }
-        }
+        Debug.Log("PlayerManager: Determining winner...");
         
         int highestScore = -1;
         int winnerId = -1;
         List<int> tiedPlayers = new List<int>();
 
-        // 全プレイヤーの詳細なスコア情報をログ出力
+        // 全プレイヤーのスコア情報をチェック
         foreach (var avatarPair in allPlayerAvatars)
         {
             var avatar = avatarPair.Value;
             if (avatar != null)
             {
                 int score = avatar.Score;
-                Debug.Log($"=== PlayerManager: Player {avatarPair.Key} final score: {score} ===" +
-                          $"\n  HasStateAuthority: {avatar.HasStateAuthority}" +
-                          $"\n  NickName: {avatar.NickName.Value}" +
-                          $"\n  Unity Frame: {Time.frameCount}, Time: {Time.time:F3}s");
+                Debug.Log($"PlayerManager: Player {avatarPair.Key} score: {score}");
 
                 if (score > highestScore)
                 {
-                    Debug.Log($"PlayerManager: Score {score} > current highest {highestScore} - updating highest");
                     highestScore = score;
                     winnerId = avatarPair.Key;
                     tiedPlayers.Clear();
                     tiedPlayers.Add(winnerId);
-                    Debug.Log($"PlayerManager: New highest score: Player {winnerId} with {highestScore} points");
                 }
-                else if (score == highestScore && highestScore >= 0) // 0点以上で同点の場合
+                else if (score == highestScore && highestScore >= 0)
                 {
-                    Debug.Log($"PlayerManager: Score {score} == current highest {highestScore} - adding to tied players");
                     tiedPlayers.Add(avatarPair.Key);
-                    Debug.Log($"PlayerManager: Tie detected: Player {avatarPair.Key} also has {score} points");
                 }
-                else
-                {
-                    Debug.Log($"PlayerManager: Score {score} <= current highest {highestScore} - no change");
-                }
-            }
-            else
-            {
-                Debug.LogWarning($"PlayerManager: Player {avatarPair.Key} avatar is null!");
             }
         }
-
-        Debug.Log($"PlayerManager: Final calculation" +
-                  $"\n  Highest Score: {highestScore}" +
-                  $"\n  Winner: {winnerId}" +
-                  $"\n  Tied Players: [{string.Join(", ", tiedPlayers)}]");
 
         // 引き分け判定：複数のプレイヤーが同じ最高スコアの場合
         if (tiedPlayers.Count > 1)
         {
-            Debug.Log($"PlayerManager: Tie detected! {tiedPlayers.Count} players have the same highest score: {highestScore}");
+            Debug.Log($"PlayerManager: Tie detected! {tiedPlayers.Count} players with score {highestScore}");
             winnerId = -1; // 引き分けを示す
+        }
+        else
+        {
+            Debug.Log($"PlayerManager: Winner is Player {winnerId} with score {highestScore}");
         }
         
         return (winnerId, highestScore, tiedPlayers);
