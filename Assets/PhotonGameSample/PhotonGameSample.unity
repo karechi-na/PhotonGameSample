@@ -913,6 +913,7 @@ GameObject:
   - component: {fileID: 1092109759}
   - component: {fileID: 1092109761}
   - component: {fileID: 1092109762}
+  - component: {fileID: 1092109763}
   m_Layer: 0
   m_Name: GameController
   m_TagString: Untagged
@@ -935,8 +936,9 @@ MonoBehaviour:
   statusWindow: {fileID: 1510939066}
   itemManager: {fileID: 1092109761}
   networkGameManager: {fileID: 1092109762}
+  playerManager: {fileID: 1092109763}
   scoreText1: {fileID: 1007007604}
-  ScoreText2: {fileID: 1613079113}
+  scoreText2: {fileID: 1613079113}
 --- !u!4 &1092109760
 Transform:
   m_ObjectHideFlags: 0
@@ -982,6 +984,18 @@ MonoBehaviour:
   spawnPositions:
   - {x: -5, y: 2, z: 0}
   - {x: 5, y: 2, z: 0}
+--- !u!114 &1092109763
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1092109758}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 68ec5b38f9a7e403295eca2d2e64d79f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &1510939064
 GameObject:
   m_ObjectHideFlags: 0

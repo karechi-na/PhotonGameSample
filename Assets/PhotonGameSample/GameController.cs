@@ -5,7 +5,7 @@ using TMPro;
 using System.Collections;
 using System.Collections.Generic;
 
-[RequireComponent(typeof(ItemManager))]
+[RequireComponent(typeof(ItemManager), typeof(PlayerManager))]
 /// <summary>
 /// GameController is responsible for managing the game state and handling player interactions.
 /// Stay within the maximum player limit and manage player models.
@@ -13,9 +13,6 @@ using System.Collections.Generic;
 public class GameController : MonoBehaviour
 {
     const int MAX_PLAYERS = 2; // Maximum number of players allowed in the game
-
-    // 全プレイヤーのアバター参照を保持
-    private Dictionary<int, PlayerAvatar> allPlayerAvatars = new Dictionary<int, PlayerAvatar>();
 
     // プレイヤーIDとスコアUIの対応を保持
     private Dictionary<int, TextMeshProUGUI> playerScoreTexts = new Dictionary<int, TextMeshProUGUI>();
@@ -26,17 +23,17 @@ public class GameController : MonoBehaviour
     [SerializeField] private TextMeshProUGUI statusWindow;
 
     /// <summary>
-    /// external references to ItemManager and NetworkGameManager components.
+    /// external references to managers components.
     /// </summary>
     [SerializeField] private ItemManager itemManager;
-    [SerializeField]private NetworkGameManager networkGameManager;
-
+    [SerializeField] private NetworkGameManager networkGameManager;
+    [SerializeField] private PlayerManager playerManager; // PlayerManagerとして直接宣言
 
     /// <summary>
     /// PlayerModel UI components
     /// </summary>
     [SerializeField] private TextMeshProUGUI scoreText1;
-    [SerializeField] private TextMeshProUGUI ScoreText2; // 二人目のプレイヤー用のスコアテキスト
+    [SerializeField] private TextMeshProUGUI scoreText2; // 二人目のプレイヤー用のスコアテキスト
     private PlayerModel localPlayerModel; // ローカルプレイヤーのモデル
     /// <summary>
     /// GameState enum defines the possible states of the game.
@@ -71,6 +68,8 @@ public class GameController : MonoBehaviour
 
     void Awake()
     {
+        Debug.Log("GameController: Awake() called");
+        
         // NetworkGameManagerの参照を取得してイベントを登録
         networkGameManager = GetComponent<NetworkGameManager>();
         if (networkGameManager == null)
@@ -84,28 +83,43 @@ public class GameController : MonoBehaviour
             networkGameManager.OnPlayerSpawned += OnPlayerSpawned;
             networkGameManager.OnPlayerLeft += OnPlayerLeft;
             networkGameManager.OnGameEndRequested += OnGameEndRequested;
-            Debug.Log("GameController: NetworkGameManager events registered");
+            Debug.Log("GameController: ✅ NetworkGameManager events registered");
         }
         else
         {
-            Debug.LogError("GameController: NetworkGameManager not found!");
+            Debug.LogError("GameController: ❌ NetworkGameManager not found!");
         }
+
+        // PlayerManagerの参照を取得してイベントを登録
+        playerManager = GetComponent<PlayerManager>();
+        
+        if (playerManager != null)
+        {
+            playerManager.OnPlayerRegistered += OnPlayerRegistered;
+            playerManager.OnPlayerUnregistered += OnPlayerUnregistered;
+            playerManager.OnPlayerScoreChanged += OnPlayerScoreChanged;
+            playerManager.OnPlayerCountChanged += OnPlayerCountChanged;
+            Debug.Log("GameController: ✅ PlayerManager events registered");
+        }
+        else
+        {
+            Debug.LogError("GameController: ❌ PlayerManager not found!");
+        }
+        
+        Debug.Log("GameController: Awake() completed");
     }
 
     void Start()
     {
         itemManager = GetComponent<ItemManager>();
         // UIコンポーネントの確認
-        Debug.Log($"GameController UI Check - scoreText: {scoreText1}, player2ScoreText: {ScoreText2}");
+        Debug.Log($"GameController UI Check - scoreText: {scoreText1}, player2ScoreText: {scoreText2}");
 
         // UIの辞書を初期化
         InitializePlayerScoreTexts();
 
         // ItemManagerの初期化
         InitializeItemManager();
-
-        // 既存のPlayerAvatarがあれば登録
-        StartCoroutine(RegisterExistingPlayers());
     }
 
     private void InitializeItemManager()
@@ -137,6 +151,38 @@ public class GameController : MonoBehaviour
         EndGame();
     }
 
+    // PlayerManagerからのイベントハンドラー
+    private void OnPlayerRegistered(PlayerAvatar avatar)
+    {
+        Debug.Log($"GameController: Player {avatar.playerId} registered via PlayerManager");
+        
+        // ItemManagerにプレイヤーを登録
+        if (itemManager != null)
+        {
+            itemManager.RegisterPlayer(avatar);
+        }
+    }
+
+    private void OnPlayerUnregistered(int playerId)
+    {
+        Debug.Log($"GameController: Player {playerId} unregistered via PlayerManager");
+    }
+
+    private void OnPlayerCountChanged(int playerCount)
+    {
+        Debug.Log($"🎯 GameController: Player count changed to {playerCount}");
+        
+        // ゲーム状態をチェック（これが主要なゲーム状態管理トリガー）
+        if (networkGameManager != null && networkGameManager.NetworkRunner != null)
+        {
+            CheckPlayerCountAndUpdateGameState(networkGameManager.NetworkRunner);
+        }
+        else
+        {
+            Debug.LogWarning("GameController: NetworkRunner not available for state check");
+        }
+    }
+
     private void InitializePlayerScoreTexts()
     {
         // プレイヤーIDとUIテキストの対応を設定
@@ -146,9 +192,9 @@ public class GameController : MonoBehaviour
             Debug.Log("Registered scoreText for Player 1");
         }
 
-        if (ScoreText2 != null)
+        if (scoreText2 != null)
         {
-            playerScoreTexts[2] = ScoreText2;
+            playerScoreTexts[2] = scoreText2;
             Debug.Log("Registered player2ScoreText for Player 2");
         }
 
@@ -157,68 +203,14 @@ public class GameController : MonoBehaviour
 
     private IEnumerator RegisterExistingPlayers()
     {
-        yield return new WaitForSeconds(0.5f); // 少し待ってからプレイヤーを検索
-
-        // 既存のプレイヤーを登録
-        var existingAvatars = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
-        Debug.Log($"Found {existingAvatars.Length} existing PlayerAvatars");
-
-        foreach (var avatar in existingAvatars)
-        {
-            RegisterPlayerAvatar(avatar);
-        }
-
-        // 継続的にプレイヤーをチェック（新しいプレイヤーが参加した場合のため）
-        StartCoroutine(ContinuousPlayerCheck());
+        // PlayerManagerが自動的に処理するため、このメソッドは不要
+        yield break;
     }
 
     private IEnumerator ContinuousPlayerCheck()
     {
-        while (true)
-        {
-            yield return new WaitForSeconds(1.0f); // 1秒ごとにチェック
-
-            var allAvatars = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
-            foreach (var avatar in allAvatars)
-            {
-                if (avatar != null && !allPlayerAvatars.ContainsKey(avatar.playerId))
-                {
-                    Debug.Log($"Found new player {avatar.playerId}, registering...");
-                    RegisterPlayerAvatar(avatar);
-                }
-            }
-        }
-    }
-
-    private void RegisterPlayerAvatar(PlayerAvatar avatar)
-    {
-        if (avatar != null && !allPlayerAvatars.ContainsKey(avatar.playerId))
-        {
-            allPlayerAvatars[avatar.playerId] = avatar;
-            avatar.OnScoreChanged += OnPlayerScoreChanged;
-
-            // 初期状態では入力を無効化
-            avatar.SetInputEnabled(CurrentGameState == GameState.InGame);
-
-            Debug.Log($"GameController: Registered Player {avatar.playerId} for score updates. Total players: {allPlayerAvatars.Count}");
-            Debug.Log($"GameController: Player {avatar.playerId} current score: {avatar.Score}");
-
-            // 即座にUIを初期化
-            OnPlayerScoreChanged(avatar.playerId, avatar.Score);
-
-            // ItemManagerにプレイヤーを登録（ItemManagerが直接ItemCatcherイベントを処理）
-            if (itemManager != null)
-            {
-                itemManager.RegisterPlayer(avatar);
-            }
-            
-            // プレイヤー登録後にゲーム状態を再確認
-            Debug.Log($"GameController: Current game state after registration: {CurrentGameState}");
-        }
-        else if (avatar != null)
-        {
-            Debug.Log($"GameController: Player {avatar.playerId} already registered or avatar is null");
-        }
+        // PlayerManagerが自動的に処理するため、このメソッドは不要
+        yield break;
     }
 
     private void EndGame()
@@ -240,44 +232,19 @@ public class GameController : MonoBehaviour
 
     private void DetermineWinner()
     {
-        Debug.Log("=== DetermineWinner called ===");
-        int highestScore = -1;
-        int winnerId = -1;
-        List<int> tiedPlayers = new List<int>();
-
-        // まず全プレイヤーの詳細なスコア情報をログ出力
-        Debug.Log($"Total registered players: {allPlayerAvatars.Count}");
-        foreach (var avatarPair in allPlayerAvatars)
+        Debug.Log("=== GameController: DetermineWinner called ===");
+        
+        if (playerManager == null)
         {
-            var avatar = avatarPair.Value;
-            if (avatar != null)
-            {
-                int score = avatar.Score;
-                Debug.Log($"=== Player {avatarPair.Key} final score: {score} ===");
-                Debug.Log($"Player {avatarPair.Key} HasStateAuthority: {avatar.HasStateAuthority}");
-                Debug.Log($"Player {avatarPair.Key} NickName: {avatar.NickName.Value}");
-
-                if (score > highestScore)
-                {
-                    highestScore = score;
-                    winnerId = avatarPair.Key;
-                    tiedPlayers.Clear();
-                    tiedPlayers.Add(winnerId);
-                    Debug.Log($"New highest score: Player {winnerId} with {highestScore} points");
-                }
-                else if (score == highestScore)
-                {
-                    tiedPlayers.Add(avatarPair.Key);
-                    Debug.Log($"Tie detected: Player {avatarPair.Key} also has {score} points");
-                }
-            }
-            else
-            {
-                Debug.LogWarning($"Player {avatarPair.Key} avatar is null!");
-            }
+            Debug.LogError("GameController: PlayerManager is null, cannot determine winner");
+            return;
         }
 
-        Debug.Log($"Final calculation - Highest Score: {highestScore}, Winner: {winnerId}, Tied Players: [{string.Join(", ", tiedPlayers)}]");
+        // PlayerManagerから勝者情報を取得
+        var winnerResult = playerManager.DetermineWinner();
+        int winnerId = winnerResult.winnerId;
+        int highestScore = winnerResult.highestScore;
+        List<int> tiedPlayers = winnerResult.tiedPlayers;
 
         // 勝者の表示
         string resultMessage;
@@ -290,7 +257,7 @@ public class GameController : MonoBehaviour
             resultMessage = $"Winner: Player {winnerId} with {highestScore} points!";
         }
 
-        Debug.Log(resultMessage);
+        Debug.Log($"GameController: {resultMessage}");
 
         if (statusWindow != null)
         {
@@ -305,8 +272,9 @@ public class GameController : MonoBehaviour
     {
         Debug.Log($"GameController: Client joined - Player: {player.PlayerId}, IsMaster: {isMasterClient}");
         
-        // プレイヤー数をチェックしてゲーム状態を更新
-        CheckPlayerCountAndUpdateGameState(runner);
+        // プレイヤー数をチェック（ただし、実際のスポーンまで待つ）
+        // CheckPlayerCountAndUpdateGameState(runner); // この時点ではスポーンされていないのでコメントアウト
+        Debug.Log($"GameController: Player {player.PlayerId} joined, waiting for spawn to complete...");
     }
 
     /// <summary>
@@ -314,8 +282,20 @@ public class GameController : MonoBehaviour
     /// </summary>
     private void OnPlayerSpawned(PlayerAvatar playerAvatar)
     {
-        Debug.Log($"GameController: Player spawned - {playerAvatar.playerId}");
-        RegisterPlayerAvatar(playerAvatar);
+        Debug.Log($"🎯 GameController: Player spawned - ID: {playerAvatar.playerId}");
+        Debug.Log($"GameController: Player {playerAvatar.playerId} - HasStateAuthority: {playerAvatar.HasStateAuthority}");
+        Debug.Log($"GameController: Player {playerAvatar.playerId} - NickName: '{playerAvatar.NickName.Value}'");
+        
+        // PlayerManagerに直接登録を指示
+        if (playerManager != null)
+        {
+            Debug.Log($"GameController: Manually registering Player {playerAvatar.playerId} to PlayerManager");
+            playerManager.RegisterPlayerAvatar(playerAvatar);
+        }
+        else
+        {
+            Debug.LogError("GameController: PlayerManager is null when trying to register spawned player!");
+        }
         
         // スポーン後に再度ゲーム状態をチェック
         if (networkGameManager != null && networkGameManager.NetworkRunner != null)
@@ -336,53 +316,68 @@ public class GameController : MonoBehaviour
     private void CheckPlayerCountAndUpdateGameState(NetworkRunner runner)
     {
         int playerCount = runner.SessionInfo.PlayerCount;
-        Debug.Log($"GameController: Current player count: {playerCount}, Registered avatars: {allPlayerAvatars.Count}");
+        int registeredPlayers = playerManager != null ? playerManager.PlayerCount : 0;
+        
+        Debug.Log($"==== GameController: CheckPlayerCountAndUpdateGameState ====");
+        Debug.Log($"GameController: Network player count: {playerCount}, Registered avatars: {registeredPlayers}");
+        Debug.Log($"GameController: Current game state: {CurrentGameState}");
+        
+        if (playerManager != null)
+        {
+            Debug.Log($"GameController: PlayerManager debug info: {playerManager.GetDebugInfo()}");
+        }
 
-        if (playerCount >= MAX_PLAYERS && CurrentGameState == GameState.WaitingForPlayers)
+        // 実際に登録されたプレイヤー数でゲーム状態を判定（ネットワーク上の接続数ではなく）
+        if (registeredPlayers >= MAX_PLAYERS && CurrentGameState == GameState.WaitingForPlayers)
         {
             // 二人揃ったのでゲーム開始
             CurrentGameState = GameState.InGame;
-            Debug.Log("GameController: All players joined! Starting game...");
+            Debug.Log("GameController: All players registered and spawned! Starting game...");
 
             // 全プレイヤーの操作を有効化
             EnableAllPlayersInput(true);
         }
-        else if (playerCount < MAX_PLAYERS)
+        else if (registeredPlayers < MAX_PLAYERS)
         {
             // プレイヤーが足りない場合は待機状態
             CurrentGameState = GameState.WaitingForPlayers;
-            Debug.Log($"GameController: Waiting for more players... ({playerCount}/{MAX_PLAYERS})");
+            Debug.Log($"GameController: Waiting for more players to spawn... (Network: {playerCount}/{MAX_PLAYERS}, Registered: {registeredPlayers}/{MAX_PLAYERS})");
 
             // 全プレイヤーの操作を無効化
             EnableAllPlayersInput(false);
         }
+        
+        Debug.Log($"GameController: State check complete. Final state: {CurrentGameState}");
+        Debug.Log($"==== CheckPlayerCountAndUpdateGameState finished ====");
     }
 
     private void EnableAllPlayersInput(bool enabled)
     {
-        foreach (var avatarPair in allPlayerAvatars)
+        Debug.Log($"==== GameController: EnableAllPlayersInput called with enabled={enabled} ====");
+        if (playerManager != null)
         {
-            var avatar = avatarPair.Value;
-            if (avatar != null)
-            {
-                avatar.SetInputEnabled(enabled);
-                Debug.Log($"Player {avatarPair.Key} input {(enabled ? "enabled" : "disabled")}");
-            }
+            Debug.Log($"GameController: PlayerManager found, total players: {playerManager.PlayerCount}");
+            Debug.Log($"GameController: About to call SetAllPlayersInputEnabled({enabled})");
+            playerManager.SetAllPlayersInputEnabled(enabled);
+            Debug.Log($"GameController: SetAllPlayersInputEnabled({enabled}) completed");
         }
+        else
+        {
+            Debug.LogError("GameController: PlayerManager is null!");
+        }
+        Debug.Log($"==== GameController: EnableAllPlayersInput finished ====");
     }
 
     // プレイヤー離脱時の処理（GameLauncherから呼び出される）
     public void OnPlayerLeft(int playerId)
     {
-        if (allPlayerAvatars.ContainsKey(playerId))
+        if (playerManager != null)
         {
-            Debug.Log($"Player {playerId} left the game");
-
-            // プレイヤーを辞書から削除
-            allPlayerAvatars.Remove(playerId);
+            playerManager.UnregisterPlayerAvatar(playerId);
+            Debug.Log($"GameController: Player {playerId} left the game");
 
             // プレイヤー数が足りなくなったら待機状態に戻す
-            if (allPlayerAvatars.Count < MAX_PLAYERS && CurrentGameState == GameState.InGame)
+            if (playerManager.PlayerCount < MAX_PLAYERS && CurrentGameState == GameState.InGame)
             {
                 CurrentGameState = GameState.WaitingForPlayers;
                 EnableAllPlayersInput(false);
@@ -411,16 +406,6 @@ public class GameController : MonoBehaviour
     // テスト用メソッド：手動でスコアを変更
     void Update()
     {
-        // デバッグ用：キー入力でスコアを手動変更
-        if (Input.GetKeyDown(KeyCode.F1))
-        {
-            TestScoreUpdate(1);
-        }
-        if (Input.GetKeyDown(KeyCode.F2))
-        {
-            TestScoreUpdate(2);
-        }
-
         // デバッグ用：ゲーム強制終了
         if (Input.GetKeyDown(KeyCode.F9))
         {
@@ -437,11 +422,6 @@ public class GameController : MonoBehaviour
         }
     }
 
-    private void TestScoreUpdate(int playerId)
-    {
-        Debug.Log($"Manual test: updating score for Player {playerId}");
-        OnPlayerScoreChanged(playerId, 999);
-    }
     private void OnChangeState(GameState newState)
     {
         // 状態が変わったときの処理をここに記述します
@@ -451,7 +431,8 @@ public class GameController : MonoBehaviour
                 Debug.Log("Waiting for players to join...");
                 if (statusWindow != null)
                 {
-                    statusWindow.text = $"Waiting for players... ({allPlayerAvatars.Count}/{MAX_PLAYERS})";
+                    int currentPlayers = playerManager != null ? playerManager.PlayerCount : 0;
+                    statusWindow.text = $"Waiting for players... ({currentPlayers}/{MAX_PLAYERS})";
                 }
                 // ゲーム状態をリセット
                 ResetGameState();
@@ -462,6 +443,8 @@ public class GameController : MonoBehaviour
                 {
                     statusWindow.text = "Game in Progress!";
                 }
+                Debug.Log("OnChangeState: About to enable all players input...");
+                EnableAllPlayersInput(true);
                 break;
             case GameState.GameOver:
                 Debug.Log("Game Over!");
@@ -482,12 +465,12 @@ public class GameController : MonoBehaviour
         }
     }
 
-    private System.Collections.IEnumerator RestartGameAfterDelay()
+    private IEnumerator RestartGameAfterDelay()
     {
         yield return new WaitForSeconds(5.0f); // 5秒間結果を表示
 
         // ゲームを再開（プレイヤーが2人いる場合）
-        if (allPlayerAvatars.Count >= MAX_PLAYERS)
+        if (playerManager != null && playerManager.PlayerCount >= MAX_PLAYERS)
         {
             CurrentGameState = GameState.InGame;
             EnableAllPlayersInput(true);
@@ -507,6 +490,15 @@ public class GameController : MonoBehaviour
             networkGameManager.OnPlayerSpawned -= OnPlayerSpawned;
             networkGameManager.OnPlayerLeft -= OnPlayerLeft;
             networkGameManager.OnGameEndRequested -= OnGameEndRequested;
+        }
+
+        // PlayerManagerのイベント登録解除
+        if (playerManager != null)
+        {
+            playerManager.OnPlayerRegistered -= OnPlayerRegistered;
+            playerManager.OnPlayerUnregistered -= OnPlayerUnregistered;
+            playerManager.OnPlayerScoreChanged -= OnPlayerScoreChanged;
+            playerManager.OnPlayerCountChanged -= OnPlayerCountChanged;
         }
     }
 }

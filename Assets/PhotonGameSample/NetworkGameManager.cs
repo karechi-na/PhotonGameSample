@@ -156,7 +156,7 @@ public class NetworkGameManager : MonoBehaviour
                 var playerAvatar = networkObject.GetComponent<PlayerAvatar>();
                 playerAvatar.NickName = $"Player{player.PlayerId}";
                 playerAvatar.playerId = player.PlayerId;
-                Debug.Log($"NetworkGameManager: Configured player {player.PlayerId} before spawn");
+                Debug.Log($"NetworkGameManager: ⚙️ Configured player {player.PlayerId} before spawn - NickName: {playerAvatar.NickName.Value}, playerId: {playerAvatar.playerId}");
             });
 
         // スポーン完了をイベントで通知
@@ -165,7 +165,9 @@ public class NetworkGameManager : MonoBehaviour
             var playerAvatar = spawnedObject.GetComponent<PlayerAvatar>();
             if (playerAvatar != null)
             {
-                Debug.Log($"NetworkGameManager: Player {player.PlayerId} spawned successfully");
+                Debug.Log($"NetworkGameManager: ✅ Player {player.PlayerId} spawned successfully");
+                Debug.Log($"NetworkGameManager: Player {playerAvatar.playerId} HasStateAuthority: {playerAvatar.HasStateAuthority}");
+                Debug.Log($"NetworkGameManager: Player {playerAvatar.playerId} NickName: '{playerAvatar.NickName.Value}'");
                 OnPlayerSpawned?.Invoke(playerAvatar);
             }
         }

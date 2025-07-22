@@ -25,14 +25,19 @@ public class PlayerAvatar : NetworkBehaviour
     // ネットワークプロパティ変更時のコールバック
     private void OnScoreChangedRender()
     {
-        Debug.Log($"OnScoreChangedRender called for Player {playerId}: {previousScore} -> {Score}");
-        Debug.Log($"OnScoreChanged event subscribers: {OnScoreChanged?.GetInvocationList()?.Length ?? 0}");
+        Debug.Log($"OnScoreChangedRender called for Player {playerId}: {previousScore} -> {Score}" +
+                  $"\n  OnScoreChanged event subscribers: {OnScoreChanged?.GetInvocationList()?.Length ?? 0}");
         OnScoreChanged?.Invoke(playerId, Score);
         previousScore = Score;
     }
 
     public override void Spawned()
     {
+        Debug.Log($"🚀 PlayerAvatar.Spawned() called for Player {playerId}" +
+                  $"\n  HasStateAuthority: {HasStateAuthority}" +
+                  $"\n  NickName: '{NickName.Value}'" +
+                  $"\n  Score: {Score}");
+        
         characterController = GetComponent<NetworkCharacterController>();
         networkAnimator = GetComponentInChildren<NetworkMecanimAnimator>();
 
@@ -41,6 +46,11 @@ public class PlayerAvatar : NetworkBehaviour
         if (HasStateAuthority)
         {
             view.MakeCameraTarget();
+            Debug.Log($"Player {playerId}: Set as camera target (has state authority)");
+        }
+        else
+        {
+            Debug.Log($"Player {playerId}: Not camera target (no state authority)");
         }
 
         // ItemCatcherのイベントをサブスクライブ
@@ -51,15 +61,17 @@ public class PlayerAvatar : NetworkBehaviour
         }
 
         previousScore = Score;
+        
+        Debug.Log($"✅ PlayerAvatar {playerId} spawned successfully and ready for registration");
     }
 
     private void OnItemCaught(Item item, PlayerAvatar playerAvatar)
     {
-        Debug.Log($"=== OnItemCaught called ===");
-        Debug.Log($"Player {playerId} ({NickName.Value}) caught item");
-        Debug.Log($"Item value: {item.itemValue}");
-        Debug.Log($"HasStateAuthority: {HasStateAuthority}");
-        Debug.Log($"Current Score before: {Score}");
+        Debug.Log($"=== OnItemCaught called ==="
+            + $"\nPlayer {playerId} ({NickName.Value}) caught item"
+            + $"\nItem value: {item.itemValue}"
+            + $"\nHasStateAuthority: {HasStateAuthority}"
+            + $"\nCurrent Score before: {Score}");
         
         if (HasStateAuthority)
         {
@@ -81,12 +93,28 @@ public class PlayerAvatar : NetworkBehaviour
         {
             var cameraRotation = Quaternion.Euler(0f, Camera.main.transform.rotation.eulerAngles.y, 0f);
             var inputDirection = new Vector3(Input.GetAxis("Horizontal"), 0f, Input.GetAxis("Vertical"));
+            
+            // 入力があった場合のみログ出力
+            if (inputDirection.magnitude > 0.01f)
+            {
+                Debug.Log($"Player {playerId}: Moving with input {inputDirection}");
+            }
+            
             characterController.Move(cameraRotation * inputDirection);
             
             // ジャンプ
             if (Input.GetKey(KeyCode.Space))
             {
+                Debug.Log($"Player {playerId}: Jump input detected");
                 characterController.Jump();
+            }
+        }
+        else if (!HasStateAuthority && inputEnabled)
+        {
+            // 権限がない場合の警告（一回だけ表示）
+            if (Time.fixedTime % 5.0f < 0.02f) // 5秒ごとに表示
+            {
+                Debug.LogWarning($"Player {playerId}: Input enabled but no StateAuthority!");
             }
         }
 
@@ -105,6 +133,6 @@ public class PlayerAvatar : NetworkBehaviour
     public void SetInputEnabled(bool enabled)
     {
         inputEnabled = enabled;
-        Debug.Log($"Player {playerId} input set to: {enabled}");
+        Debug.Log($"Player {playerId} input set to: {enabled} (HasStateAuthority: {HasStateAuthority})");
     }
 }
