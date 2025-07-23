@@ -207,3 +207,33 @@
     *   スコアの加算や減算などのデータ操作メソッド。
 
 
+
+
+## 5. ゲームイベントの流れと`GameEvents.cs`の発火順序
+
+ゲーム内の主要なイベントは`GameEvents.cs`を通じて管理され、各コンポーネント間の疎結合な通信を実現しています。以下に、ゲーム開始からアイテム取得、スコア表示、勝敗判定の表示までのイベントの流れと、`GameEvents.cs`での発火および発火するクラスの順序を解説します。
+
+### 5.1. ゲーム開始
+
+1.  **`GameLauncher.cs`**: Photon Cloudへの接続が成功し、セッションが開始されると、`GameLauncher.cs`は`NetworkRunner`のコールバックを通じてプレイヤーの参加を検知します。
+2.  **`GameController.cs`**: `GameLauncher.cs`からの通知を受け、`GameController.cs`はプレイヤー数をチェックします。`MAX_PLAYERS`に達すると、ゲームの状態を`WaitingForPlayers`から`InGame`に遷移させます。
+    *   **`GameEvents.TriggerGameStateChanged(GameState.InGame)`**: `GameController.cs`がゲーム状態の変更を`GameEvents`を通じて発火します。これにより、`GameUIManager.cs`などがゲーム開始UIを更新します。
+
+### 5.2. アイテム取得とスコア表示
+
+1.  **`Item.cs`**: プレイヤーがゲーム内のアイテムに触れると、`Item.cs`内のロジックがアイテムの収集を検知します。
+2.  **`ItemCatcher.cs`**: `Item.cs`からの通知を受け、`ItemCatcher.cs`（`PlayerAvatar`にアタッチされている）がアイテムのキャッチを処理します。
+3.  **`PlayerAvatar.cs`**: `ItemCatcher.cs`からの通知を受け、`PlayerAvatar.cs`は自身のスコアを更新します。このスコア更新はネットワーク同期されます。
+    *   **`GameEvents.TriggerPlayerScoreChanged(playerId, newScore)`**: `PlayerAvatar.cs`が自身のスコア変更を`GameEvents`を通じて発火します。これにより、`GameUIManager.cs`などがプレイヤーのスコア表示をリアルタイムで更新します。
+4.  **`ItemManager.cs`**: `Item.cs`が収集されると、`ItemManager.cs`は収集されたアイテム数を追跡します。
+
+### 5.3. 勝敗判定の表示
+
+1.  **`ItemManager.cs`**: 全てのアイテムが収集されると、`ItemManager.cs`は`OnAllItemsCollected`イベントを発火します。
+2.  **`GameRuleProcessor.cs`**: `ItemManager.cs`からの`OnAllItemsCollected`イベントを受け取り、`GameRuleProcessor.cs`はゲーム終了のトリガーと判断します。
+    *   **`GameEvents.TriggerGameEnd()`**: `GameRuleProcessor.cs`がゲーム終了を`GameEvents`を通じて発火します。これにより、`GameController.cs`がゲームを終了状態に遷移させ、プレイヤーの入力を無効化します。
+3.  **`GameRuleProcessor.cs`**: ゲーム終了後、`GameRuleProcessor.cs`は`PlayerManager.cs`から最終的なスコア情報を取得し、勝者を決定します。
+    *   **`GameEvents.TriggerWinnerDetermined(winnerId, winnerName, winnerScore)`**: `GameRuleProcessor.cs`が勝者決定の結果を`GameEvents`を通じて発火します。これにより、`GameUIManager.cs`などが勝者メッセージをUIに表示します。
+
+このイベント駆動の仕組みにより、各コンポーネントは互いに直接依存することなく、柔軟かつ拡張性の高いゲームロジックを実現しています。
+
