@@ -100,7 +100,6 @@ public class GameController : MonoBehaviour
         if (gameRuleProcessor != null)
         {
             gameRuleProcessor.OnGameEndTriggered += EndGame;
-            gameRuleProcessor.OnWinnerDetermined += OnWinnerDetermined;
         }
         else
         {
@@ -183,38 +182,6 @@ public class GameController : MonoBehaviour
 
         // GameRuleProcessorに勝者決定を委任
         GameEvents.TriggerGameEnd();
-    }
-
-    // GameRuleProcessorからの勝者決定結果を受け取るハンドラー
-    private void OnWinnerDetermined(string resultMessage)
-    {
-        Debug.Log($"GameController: Winner determined - {resultMessage}");
-        
-        // GameEventsを通じて全クライアントに勝者メッセージを送信
-        GameEvents.TriggerWinnerDetermined(resultMessage);
-        
-        // ネットワーク経由でも全クライアントに送信（念のため）
-        BroadcastWinnerMessageViaRPC(resultMessage);
-    }
-
-    // RPC経由で勝者メッセージを全クライアントに送信
-    private void BroadcastWinnerMessageViaRPC(string message)
-    {
-        if (playerManager == null) return;
-        
-        // StateAuthorityを持つプレイヤーからRPCを送信
-        foreach (var playerPair in playerManager.AllPlayers)
-        {
-            var playerAvatar = playerPair.Value;
-            if (playerAvatar != null && playerAvatar.HasStateAuthority)
-            {
-                Debug.Log($"GameController: Sending winner message via RPC from Player {playerAvatar.playerId}");
-                playerAvatar.RPC_BroadcastWinnerMessage(message);
-                return;
-            }
-        }
-        
-        Debug.LogWarning("GameController: No player with StateAuthority found for RPC broadcast");
     }
 
     /// <summary>
@@ -415,7 +382,6 @@ public class GameController : MonoBehaviour
         if (gameRuleProcessor != null)
         {
             gameRuleProcessor.OnGameEndTriggered -= EndGame;
-            gameRuleProcessor.OnWinnerDetermined -= OnWinnerDetermined;
         }
     }
 }

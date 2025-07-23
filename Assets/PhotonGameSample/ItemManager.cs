@@ -4,9 +4,6 @@ using Fusion;
 
 public class ItemManager : MonoBehaviour
 {
-    [Header("Static Item Management")]
-    [SerializeField] private bool debugMode = false; // デバッグ用フラグ
-    
     // イベント
     public event Action<int, int> OnItemCountChanged; // (currentCount, totalCount)
     public event Action OnAllItemsCollected; // 全アイテム収集完了時

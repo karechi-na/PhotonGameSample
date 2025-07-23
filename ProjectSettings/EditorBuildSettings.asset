@@ -9,6 +9,9 @@ EditorBuildSettings:
     path: Assets/PhotonGameSample/PhotonGameSample.unity
     guid: 6dab3c59133f148259ec6455cc4ab6ce
   - enabled: 1
+    path: Assets/PhotonGameSample/ItemOneShot.unity
+    guid: 91bb51d0198d64554a25532e2f6f1eb0
+  - enabled: 0
     path: Assets/PhotonGameSample/Item.unity
     guid: fcf868ec7bc0f9c49a1575e0310781af
   m_configObjects:

@@ -916,7 +916,6 @@ GameObject:
   - component: {fileID: 1092109763}
   - component: {fileID: 1092109764}
   - component: {fileID: 1092109765}
-  - component: {fileID: 1092109766}
   m_Layer: 0
   m_Name: GameController
   m_TagString: Untagged
@@ -967,7 +966,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5352f2963aab04aa082302fc0b38b866, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  debugMode: 0
 --- !u!114 &1092109762
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1012,18 +1010,6 @@ MonoBehaviour:
   player1ScoreText: {fileID: 1007007604}
   player2ScoreText: {fileID: 1613079113}
 --- !u!114 &1092109765
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1092109758}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 356dc24baee83412f8a8431b947b83d5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
---- !u!114 &1092109766
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}

@@ -8,12 +8,15 @@ public class GameRuleProcessor : MonoBehaviour
 {
     // イベントの発火
     public event System.Action OnGameEndTriggered; // ゲーム終了をトリガー
-    public event System.Action<string> OnWinnerDetermined; // 勝者決定を通知
 
     private PlayerManager playerManager; // PlayerManagerの参照
     private bool isWaitingForScoreUpdate = false; // スコア更新待ちフラグ
-    private float scoreUpdateTimeout = 2.0f; // スコア更新のタイムアウト
+    private float scoreUpdateTimeout = 3.0f; // スコア更新のタイムアウト（2.0秒→3.0秒に延長）
     private bool isProcessingWinnerDetermination = false; // 勝者決定処理中フラグ
+    
+    // 全スコア更新完了を追跡するための新しいフィールド
+    private HashSet<int> completedScoreUpdates = new HashSet<int>();
+    private int totalPlayerCount = 2; // プレイヤー数（動的に更新される）
 
     void Awake()
     {
@@ -35,6 +38,9 @@ public class GameRuleProcessor : MonoBehaviour
         
         // スコア更新完了イベント購読
         GameEvents.OnScoreUpdateCompleted += OnScoreUpdateCompleted;
+        
+        // プレイヤー数変更イベントの購読
+        GameEvents.OnPlayerCountChanged += UpdateTotalPlayerCount;
     }
 
     // アイテム収集によるゲーム終了のトリガー
@@ -42,20 +48,70 @@ public class GameRuleProcessor : MonoBehaviour
     {
         Debug.Log("GameRuleProcessor: All items collected - ending game");
         
+        // StateAuthorityを持つプレイヤーが存在するクライアントのみが勝敗判定を実行
+        bool hasAuthorityPlayer = false;
+        if (playerManager != null)
+        {
+            foreach (var playerPair in playerManager.AllPlayers)
+            {
+                if (playerPair.Value != null && playerPair.Value.HasStateAuthority)
+                {
+                    hasAuthorityPlayer = true;
+                    break;
+                }
+            }
+        }
+        
+        if (!hasAuthorityPlayer)
+        {
+            Debug.Log("GameRuleProcessor: No authority player on this client - skipping winner determination");
+            return;
+        }
+        
         // ゲーム終了をGameControllerに通知
         OnGameEndTriggered?.Invoke();
         
         // スコア更新の完了を待ってから勝者決定
         isWaitingForScoreUpdate = true;
         
+        // 全プレイヤーのスコア更新完了を追跡
+        completedScoreUpdates.Clear();
+        
         // タイムアウト処理を開始
         StartCoroutine(WaitForScoreUpdateWithTimeout());
+    }
+
+    // プレイヤー数の更新
+    private void UpdateTotalPlayerCount(int playerCount)
+    {
+        totalPlayerCount = playerCount;
+        Debug.Log($"GameRuleProcessor: Total player count updated to {totalPlayerCount}");
     }
 
     // GameControllerからゲーム終了の指示を受けた場合
     private void HandleGameEndedByController()
     {
         Debug.Log("GameRuleProcessor: Game ended by controller");
+        
+        // StateAuthorityチェック
+        bool hasAuthorityPlayer = false;
+        if (playerManager != null)
+        {
+            foreach (var playerPair in playerManager.AllPlayers)
+            {
+                if (playerPair.Value != null && playerPair.Value.HasStateAuthority)
+                {
+                    hasAuthorityPlayer = true;
+                    break;
+                }
+            }
+        }
+        
+        if (!hasAuthorityPlayer)
+        {
+            Debug.Log("GameRuleProcessor: No authority player on this client - skipping winner determination");
+            return;
+        }
         
         // すでにスコア更新待ち状態の場合は何もしない（重複防止）
         if (isWaitingForScoreUpdate)
@@ -67,6 +123,9 @@ public class GameRuleProcessor : MonoBehaviour
         // スコア更新の完了を待ってから勝者決定
         isWaitingForScoreUpdate = true;
         
+        // 全プレイヤーのスコア更新完了を追跡
+        completedScoreUpdates.Clear();
+        
         // タイムアウト処理を開始
         StartCoroutine(WaitForScoreUpdateWithTimeout());
     }
@@ -77,18 +136,27 @@ public class GameRuleProcessor : MonoBehaviour
         if (isWaitingForScoreUpdate)
         {
             Debug.Log($"GameRuleProcessor: Score update completed for Player {playerId} -> {newScore}");
-            isWaitingForScoreUpdate = false;
+            completedScoreUpdates.Add(playerId);
             
-            // 他のスコア更新イベントが続いて発生する可能性があるので、少し遅延
-            StartCoroutine(DelayedWinnerDetermination());
+            Debug.Log($"GameRuleProcessor: Score updates completed: {completedScoreUpdates.Count}/{totalPlayerCount}");
+            
+            // 全プレイヤーのスコア更新が完了した場合のみ勝敗判定
+            if (completedScoreUpdates.Count >= totalPlayerCount)
+            {
+                Debug.Log("GameRuleProcessor: All score updates completed - starting winner determination");
+                isWaitingForScoreUpdate = false;
+                
+                // ネットワーク同期のためにより長い遅延
+                StartCoroutine(DelayedWinnerDetermination());
+            }
         }
     }
     
     // 遅延付きの勝者決定（重複実行防止）
     private System.Collections.IEnumerator DelayedWinnerDetermination()
     {
-        // 短い遅延で他のスコア更新イベントが完了するのを待つ
-        yield return new WaitForSeconds(0.1f);
+        // ネットワーク同期のためにより長い遅延
+        yield return new WaitForSeconds(0.3f); // 0.1秒 → 0.3秒
         
         // 遅延中に再度待機状態になった場合はスキップ
         if (!isWaitingForScoreUpdate)
@@ -118,6 +186,26 @@ public class GameRuleProcessor : MonoBehaviour
     // 勝者決定ロジック
     public void DetermineWinner()
     {
+        // 権威チェック
+        bool hasAuthorityPlayer = false;
+        if (playerManager != null)
+        {
+            foreach (var playerPair in playerManager.AllPlayers)
+            {
+                if (playerPair.Value != null && playerPair.Value.HasStateAuthority)
+                {
+                    hasAuthorityPlayer = true;
+                    break;
+                }
+            }
+        }
+        
+        if (!hasAuthorityPlayer)
+        {
+            Debug.Log("GameRuleProcessor: No authority player - skipping winner determination");
+            return;
+        }
+        
         if (isProcessingWinnerDetermination)
         {
             Debug.Log("GameRuleProcessor: Winner determination already in progress");
@@ -247,19 +335,27 @@ public class GameRuleProcessor : MonoBehaviour
     {
         if (playerManager == null) return;
         
-        // 最初に見つかったStateAuthorityを持つプレイヤーからRPCを送信
+        // 現在のクライアントにStateAuthorityを持つプレイヤーがいるかチェック
+        PlayerAvatar authorityPlayer = null;
         foreach (var playerPair in playerManager.AllPlayers)
         {
             var playerAvatar = playerPair.Value;
             if (playerAvatar != null && playerAvatar.HasStateAuthority)
             {
-                Debug.Log($"GameRuleProcessor: Sending winner message via RPC from Player {playerAvatar.playerId}");
-                playerAvatar.RPC_BroadcastWinnerMessage(message);
-                return; // 一度送信したら終了
+                authorityPlayer = playerAvatar;
+                break;
             }
         }
         
-        Debug.LogWarning("GameRuleProcessor: No player with StateAuthority found for RPC broadcast");
+        if (authorityPlayer != null)
+        {
+            Debug.Log($"GameRuleProcessor: Sending winner message via RPC from Player {authorityPlayer.playerId}");
+            authorityPlayer.RPC_BroadcastWinnerMessage(message);
+        }
+        else
+        {
+            Debug.LogWarning("GameRuleProcessor: No authority player found on this client for RPC broadcast");
+        }
     }
 
     void OnDestroy()
@@ -270,5 +366,6 @@ public class GameRuleProcessor : MonoBehaviour
         }
         GameEvents.OnGameEnd -= HandleGameEndedByController;
         GameEvents.OnScoreUpdateCompleted -= OnScoreUpdateCompleted;
+        GameEvents.OnPlayerCountChanged -= UpdateTotalPlayerCount;
     }
 }
