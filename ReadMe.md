@@ -10,6 +10,7 @@
 - [各ソースコードの詳細](#4-各ソースコードの内容)
 - [Prefabsディレクトリ](#prefabs-ディレクトリ概要)
 - [責任分離の改善](#6-アーキテクチャ改善playeravatarの責任分離)
+- [段階的改造ガイド](#7-段階的な改造拡張ポイント)
 
 ## ⚡ アーキテクチャの改善
 このプロジェクトでは、コードの保守性と拡張性を向上させるため、ゲーム進行管理機能をPlayerAvatarから分離し、専用の`GameSyncManager`を導入しています。これにより、各クラスの責任が明確化され、より良いアーキテクチャを実現しています。
@@ -337,4 +338,142 @@ public class GameSyncManager : NetworkBehaviour
 ```
 
 この改善により、より保守しやすく拡張可能なアーキテクチャを実現しています。
+
+## 7. 段階的な改造・拡張ポイント
+
+このゲームを段階的に改造・拡張する際の推奨ポイントを、難易度と必要な知識レベル別に整理しました。
+
+### 7.1. 初級レベル（Unity基礎知識）
+
+#### A. UIとビジュアル改善
+- **プレイヤーアバターの見た目変更**
+  - `PlayerAvatar.prefab`のモデルやマテリアルを変更
+  - `PlayerAvatarView.cs`でプレイヤー別の色分けやスキン追加
+  - 対象ファイル: `Prefabs/PlayerAvatar.prefab`, `PlayerAvatarView.cs`
+
+- **アイテムの種類拡張**
+  - `Item.prefab`を複製して異なるスコアを持つアイテム作成
+  - `Item.cs`でアイテム種別プロパティ追加
+  - 対象ファイル: `Prefabs/Item.prefab`, `Item.cs`, `ItemManager.cs`
+
+- **UI表示の改善**
+  - `GameUIManager.cs`でスコア表示、タイマー表示の改善
+  - ゲーム状態に応じたUI要素の追加
+  - 対象ファイル: `GameUIManager.cs`
+
+#### B. ゲームルールの簡単な変更
+- **勝利条件の変更**
+  - `GameRuleProcessor.cs`で時間制限やスコア閾値による勝利条件追加
+  - 対象ファイル: `GameRuleProcessor.cs`
+
+- **プレイヤー数の変更**
+  - `GameController.cs`の`MAX_PLAYERS`定数変更
+  - 対象ファイル: `GameController.cs`
+
+### 7.2. 中級レベル（ネットワーク基礎知識）
+
+#### A. 新しいゲーム機能追加
+- **パワーアップアイテム実装**
+  - 移動速度アップ、ジャンプ力アップなどの一時的効果
+  - `PlayerAvatar.cs`に状態効果システム追加
+  - `GameSyncManager.cs`でパワーアップ状態同期
+  - 対象ファイル: `PlayerAvatar.cs`, `GameSyncManager.cs`, `Item.cs`
+
+- **エリア制限・障害物追加**
+  - マップにコライダーで境界設定
+  - `PlayerAvatar.cs`の移動制限ロジック追加
+  - 対象ファイル: `PlayerAvatar.cs`, シーン設定
+
+- **チーム戦モード実装**
+  - `PlayerModel.cs`にチーム情報追加
+  - `GameRuleProcessor.cs`でチーム別勝利判定
+  - `PlayerManager.cs`でチーム管理機能
+  - 対象ファイル: `PlayerModel.cs`, `GameRuleProcessor.cs`, `PlayerManager.cs`
+
+#### B. ゲーム進行システム拡張
+- **ラウンド制ゲーム実装**
+  - `GameController.cs`にラウンド管理機能追加
+  - `GameSyncManager.cs`でラウンド状態同期RPC追加
+  - 対象ファイル: `GameController.cs`, `GameSyncManager.cs`, `GameEvents.cs`
+
+- **観戦モード実装**
+  - `GameLauncher.cs`で観戦者とプレイヤーの区別
+  - `NetworkGameManager.cs`で観戦者用の接続処理
+  - 対象ファイル: `GameLauncher.cs`, `NetworkGameManager.cs`
+
+### 7.3. 上級レベル（高度なネットワーク知識）
+
+#### A. パフォーマンス最適化
+- **ネットワーク通信最適化**
+  - `PlayerAvatar.cs`のNetworkProperty使用量最適化
+  - `GameSyncManager.cs`のRPC送信頻度制御
+  - Fusion Tickの最適化
+  - 対象ファイル: `PlayerAvatar.cs`, `GameSyncManager.cs`
+
+- **サーバー権限管理強化**
+  - `GameController.cs`でチート防止ロジック強化
+  - `ItemManager.cs`でサーバー側でのアイテム管理
+  - 対象ファイル: `GameController.cs`, `ItemManager.cs`, `PlayerAvatar.cs`
+
+#### B. 複雑なゲームモード
+- **バトルロワイヤルモード**
+  - マップの段階的縮小システム
+  - 生存者管理とエリミネーション
+  - `GameRuleProcessor.cs`で複雑な勝利条件
+  - 新規クラス: `BattleRoyaleManager.cs`, `MapShrinkManager.cs`
+
+- **アビリティシステム実装**
+  - プレイヤー固有の特殊能力
+  - クールダウン管理とネットワーク同期
+  - `PlayerAvatar.cs`大幅拡張または新規`AbilityManager.cs`作成
+
+### 7.4. 専門レベル（ゲーム開発全般知識）
+
+#### A. AIシステム統合
+- **NPCプレイヤー実装**
+  - `PlayerAvatar.cs`のAI制御版作成
+  - `GameController.cs`でAIプレイヤー管理
+  - NavMeshを使用した移動AI
+
+- **マッチメイキングシステム**
+  - Photon CloudのマッチメイキングAPI活用
+  - `GameLauncher.cs`でスキルベースマッチング
+  - レーティングシステム実装
+
+#### B. データ永続化・解析
+- **プレイヤー統計保存**
+  - 外部データベース（Firebase等）との統合
+  - `PlayerModel.cs`拡張でプレイヤー履歴管理
+  - ゲーム結果の永続化
+
+- **リアルタイム解析**
+  - ゲームプレイデータ収集システム
+  - `GameEvents.cs`拡張でイベント解析
+  - パフォーマンスメトリクス収集
+
+### 7.5. 改造時の推奨手順
+
+1. **計画フェーズ**
+   - 既存の`GameEvents.cs`で必要なイベント追加検討
+   - 影響を受けるクラスの洗い出し
+   - ネットワーク同期が必要な要素の特定
+
+2. **実装フェーズ**
+   - ローカル機能実装 → ネットワーク同期実装の順序
+   - `GameSyncManager.cs`へのRPC追加（ゲーム進行関連）
+   - `PlayerAvatar.cs`へのRPC追加（プレイヤー固有機能）
+
+3. **テストフェーズ**
+   - シングルプレイヤーでの機能テスト
+   - マルチプレイヤーでの同期テスト
+   - エッジケース（接続切断、再接続）のテスト
+
+### 7.6. 改造時の注意点
+
+- **アーキテクチャの維持**: 責任分離の原則を維持し、適切なクラスに機能追加
+- **ネットワーク負荷**: RPC頻度とデータサイズの最適化
+- **後方互換性**: 既存のセーブデータやネットワークプロトコルとの互換性
+- **デバッグ**: `GameEvents.cs`のイベントログ活用でデバッグ効率化
+
+この段階的なアプローチにより、学習曲線に沿った無理のないゲーム拡張が可能になります。
 
