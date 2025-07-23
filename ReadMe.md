@@ -2,6 +2,18 @@
 
 このプロジェクトは、UnityとPhoton Fusionを使用して構築されたマルチプレイヤーゲームのサンプルです。ゲームの基本的な流れ、主要なスクリプトの役割、およびイベントシステムについて解説します。
 
+## 📚 目次
+- [アーキテクチャの改善](#-アーキテクチャの改善)
+- [ゲームの流れ](#1-ゲームの開始から終了までの流れ)
+- [ソースコードの関係性](#2-各ソースコードの関係性)
+- [イベントシステム](#3-イベントシステムの仕組み-gameeventscs)
+- [各ソースコードの詳細](#4-各ソースコードの内容)
+- [Prefabsディレクトリ](#prefabs-ディレクトリ概要)
+- [責任分離の改善](#6-アーキテクチャ改善playeravatarの責任分離)
+
+## ⚡ アーキテクチャの改善
+このプロジェクトでは、コードの保守性と拡張性を向上させるため、ゲーム進行管理機能をPlayerAvatarから分離し、専用の`GameSyncManager`を導入しています。これにより、各クラスの責任が明確化され、より良いアーキテクチャを実現しています。
+
 ## 1. ゲームの開始から終了までの流れ
 
 1.  **アプリケーション起動と接続:**
@@ -33,13 +45,14 @@
 主要なスクリプトとその関係性は以下の通りです。
 
 *   **`GameLauncher.cs`**: Photon Fusionのセッション管理とプレイヤーの接続を担当します。`NetworkRunner`のライフサイクルイベントを処理し、`GameController`にプレイヤーの参加やスポーンを通知します。
-*   **`GameController.cs`**: ゲーム全体の状態（待機中、ゲーム中、ゲーム終了）を管理する中心的なスクリプトです。`PlayerManager`, `ItemManager`, `NetworkGameManager`, `GameUIManager`, `GameRuleProcessor`といった他のマネージャーコンポーネントと連携し、ゲームの進行を制御します。イベント駆動で各マネージャーと通信します。
+*   **`GameController.cs`**: ゲーム全体の状態（待機中、ゲーム中、ゲーム終了）を管理する中心的なスクリプトです。`PlayerManager`, `ItemManager`, `NetworkGameManager`, `GameSyncManager`, `GameUIManager`, `GameRuleProcessor`といった他のマネージャーコンポーネントと連携し、ゲームの進行を制御します。イベント駆動で各マネージャーと通信します。
 *   **`PlayerManager.cs`**: ゲームに参加しているプレイヤーのアバター（`PlayerAvatar`）を管理します。プレイヤーの登録、登録解除、スコア変更、プレイヤー数変更などのイベントを発火します。`GameRuleProcessor`に勝者決定のための情報を提供します。
 *   **`ItemManager.cs`**: ゲーム内のアイテムの生成、収集、および収集状況を管理します。全てのアイテムが収集された際に`GameRuleProcessor`に通知します。
 *   **`GameRuleProcessor.cs`**: ゲームの終了条件（全アイテム収集など）を判定し、ゲームの勝者を決定するロジックを担います。`PlayerManager`からスコア情報を取得し、`GameEvents`を通じて勝者決定を通知します。
 *   **`GameUIManager.cs`**: ゲームのUI表示を管理します。ゲームの状態変化やスコア更新などのイベントを`GameEvents`から受け取り、UIを更新します。
 *   **`NetworkGameManager.cs`**: Photon Fusionのネットワーク同期に関する処理をラップし、ネットワーク関連のイベントを`GameController`などの他のコンポーネントに通知する役割を担います。`NetworkRunner`のコールバックを直接処理するのではなく、より高レベルなイベントとして提供します。
-*   **`PlayerAvatar.cs` (Prefabs配下)**: 各プレイヤーのネットワークオブジェクトであり、プレイヤーの移動、アニメーション、スコア、ニックネームなどのデータを同期します。RPC（Remote Procedure Call）を通じて他のクライアントと通信します。
+*   **`GameSyncManager.cs`**: ゲーム進行の同期管理を専門に担当するNetworkBehaviourクラスです。カウントダウン、ゲーム状態変更、再開処理、アイテムリセットなどのRPC通信を通じて、クライアント間のゲーム進行を同期します。PlayerAvatarから分離されたことで、ゲーム進行管理がより明確に責任分離されています。
+*   **`PlayerAvatar.cs` (Prefabs配下)**: 各プレイヤーのネットワークオブジェクトであり、プレイヤー個別の機能（移動、アニメーション、スコア、ニックネーム）に特化しています。ゲーム進行関連のRPCは`GameSyncManager`に移譲され、プレイヤー固有の機能のみを担当するよう簡素化されています。
 *   **`Item.cs` (Prefabs配下)**: ゲーム内の収集可能なアイテムの挙動を定義します。プレイヤーがアイテムに触れた際の処理（収集）を管理します。
 
 ## 3. イベントシステムの仕組み (`GameEvents.cs`)
@@ -124,6 +137,21 @@
     *   ゲーム終了要求の処理。
     *   `NetworkRunner`インスタンスへのアクセス提供。
 
+### `GameSyncManager.cs`
+
+*   **役割**: ゲーム進行の同期管理を専門に担当するNetworkBehaviourクラスです。PlayerAvatarから分離されたゲーム進行関連のRPC機能を一元管理し、クライアント間でのゲーム状態同期を実現します。
+*   **主要な機能**: 
+    *   ゲーム再開クリックの同期（`NotifyRestartClick`）
+    *   カウントダウン更新の同期（`NotifyCountdownUpdate`）
+    *   ゲーム状態変更の同期（`NotifyGameStateChanged`）
+    *   プレイヤー入力制御の同期（`NotifyEnableAllPlayersInput`）
+    *   ゲーム再開処理の同期（`NotifyGameRestart`）
+    *   アイテムリセットの同期（`NotifyItemsReset`）
+*   **アーキテクチャ上の利点**: 
+    *   PlayerAvatarがプレイヤー個別機能に集中できるよう責任を分離
+    *   ゲーム進行管理の一元化により保守性が向上
+    *   新しいゲーム進行機能の追加時、既存のPlayerAvatarに影響しない
+
 ### `PlayerManager.cs`
 
 *   **役割**: ゲームに参加している全てのプレイヤーアバター（`PlayerAvatar`）の情報を一元的に管理します。プレイヤーの登録、登録解除、スコアの追跡、および勝者決定のための情報提供を行います。
@@ -152,13 +180,17 @@
 
 ### `PlayerAvatar.prefab` と `PlayerAvatar.cs`
 
-*   **役割**: ゲームに参加する各プレイヤーを表すアバターのプレハブと、その挙動を制御するスクリプトです。ネットワーク上で同期されるプレイヤーの主要な情報と操作を管理します。
+*   **役割**: ゲームに参加する各プレイヤーを表すアバターのプレハブと、その挙動を制御するスクリプトです。アーキテクチャ改善により、プレイヤー個別の機能に特化し、ゲーム進行管理は`GameSyncManager`に分離されています。
 *   **`PlayerAvatar.cs` の内容**: 
-    *   プレイヤーの移動、回転、アニメーションの制御。
-    *   プレイヤーのスコア、ニックネーム、IDなどの情報の管理とネットワーク同期。
-    *   RPC (Remote Procedure Call) を使用した他のクライアントとの通信（例: 勝者メッセージのブロードキャスト）。
-    *   プレイヤーの入力処理（移動、アクションなど）。
-    *   `NetworkBehaviour`を継承し、Photon Fusionによるネットワーク同期を実現。
+    *   プレイヤーの移動、回転、ジャンプの制御
+    *   プレイヤーのスコア、ニックネーム、IDなどの情報の管理とネットワーク同期
+    *   アイテム取得とスコア更新のRPC処理
+    *   勝者メッセージRPC（プレイヤー固有の通知機能）
+    *   プレイヤーの入力処理（移動、ジャンプなど）
+    *   `NetworkBehaviour`を継承し、Photon Fusionによるネットワーク同期を実現
+*   **改善点**: 
+    *   ゲーム進行関連のRPC（カウントダウン、状態変更、再開処理など）を`GameSyncManager`に移譲
+    *   プレイヤー固有の責任に集中することで、コードの可読性と保守性が向上
 
 ### `NetworkRunner.prefab`
 
@@ -240,4 +272,69 @@
     *   **`GameEvents.TriggerWinnerDetermined(winnerId, winnerName, winnerScore)`**: `GameRuleProcessor.cs`が勝者決定の結果を`GameEvents`を通じて発火します。これにより、`GameUIManager.cs`などが勝者メッセージをUIに表示します。
 
 このイベント駆動の仕組みにより、各コンポーネントは互いに直接依存することなく、柔軟かつ拡張性の高いゲームロジックを実現しています。
+
+## 6. アーキテクチャ改善：PlayerAvatarの責任分離
+
+### 6.1. 改善の背景
+初期実装では`PlayerAvatar.cs`にプレイヤー個別の機能とゲーム進行管理の機能が混在しており、以下の問題がありました：
+- 単一責任原則の違反（プレイヤー機能 + ゲーム進行管理）
+- コードの可読性低下（400行超の肥大化）
+- 保守性の低下（変更時の影響範囲が不明確）
+- テスタビリティの低下（機能が密結合）
+
+### 6.2. 解決策：GameSyncManagerの導入
+`GameSyncManager`を新規作成し、以下のゲーム進行管理機能をPlayerAvatarから分離：
+
+#### 分離された機能（6種類のRPCメソッド）
+- `NotifyRestartClick` / `RPC_NotifyRestartClick` - 再開クリックの同期
+- `NotifyCountdownUpdate` / `RPC_NotifyCountdownUpdate` - カウントダウンの同期  
+- `NotifyGameStateChanged` / `RPC_NotifyGameStateChanged` - ゲーム状態変更の同期
+- `NotifyEnableAllPlayersInput` / `RPC_NotifyEnableAllPlayersInput` - 入力制御の同期
+- `NotifyGameRestart` / `RPC_NotifyGameRestart` - ゲーム再開処理の同期
+- `NotifyItemsReset` / `RPC_NotifyItemsReset` - アイテムリセットの同期
+
+#### PlayerAvatarに残された機能
+- プレイヤーの移動・ジャンプ制御
+- スコア管理（OnItemCaught、RPC_UpdateScore）
+- プレイヤー固有の状態管理
+- 勝者メッセージRPC（プレイヤー固有の機能）
+
+### 6.3. 改善効果
+
+| 改善項目 | 改善前 | 改善後 |
+|----------|--------|--------|
+| **責任の分離** | PlayerAvatarが複数責任 | 各クラスが単一責任 |
+| **コード行数** | PlayerAvatar: 400行超 | PlayerAvatar: 300行程度<br>GameSyncManager: 120行程度 |
+| **保守性** | 変更時の影響範囲が不明確 | 機能別に明確に分離 |
+| **テスタビリティ** | 機能が密結合でテスト困難 | 独立してテスト可能 |
+| **拡張性** | 新機能追加時に既存コード影響 | 適切なクラスに機能追加可能 |
+
+### 6.4. 実装パターン
+```csharp
+// 改善前：PlayerAvatar内でゲーム進行RPC
+public class PlayerAvatar : NetworkBehaviour 
+{
+    // プレイヤー機能 + ゲーム進行管理が混在
+    public void NotifyRestartClick() { ... }
+    public void NotifyCountdownUpdate() { ... }
+    // ... 他のゲーム進行RPC
+}
+
+// 改善後：責任の明確な分離
+public class PlayerAvatar : NetworkBehaviour 
+{
+    // プレイヤー個別機能のみに集中
+    private void OnItemCaught() { ... }
+    public void ResetScore() { ... }
+}
+
+public class GameSyncManager : NetworkBehaviour 
+{
+    // ゲーム進行同期管理に特化
+    public void NotifyRestartClick() { ... }
+    public void NotifyCountdownUpdate() { ... }
+}
+```
+
+この改善により、より保守しやすく拡張可能なアーキテクチャを実現しています。
 
