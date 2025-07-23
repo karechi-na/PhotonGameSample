@@ -34,6 +34,7 @@ public class GameController : MonoBehaviour
     [SerializeField] private PlayerManager playerManager; // PlayerManagerとして直接宣言
     private GameUIManager gameUIManager; // RequireComponentで取得
     private GameRuleProcessor gameRuleProcessor; // ゲームルール処理
+    // private GameSyncManager gameSyncManager; // ゲーム進行の同期管理 - TODO: 後で有効化
 
     private PlayerModel localPlayerModel; // ローカルプレイヤーのモデル
 
@@ -68,6 +69,18 @@ public class GameController : MonoBehaviour
         {
             Debug.LogError("GameController: GameUIManager not found!");
         }
+        
+        // TODO: GameSyncManagerの参照を取得（後で有効化）
+        // gameSyncManager = GetComponent<GameSyncManager>();
+        // if (gameSyncManager == null)
+        // {
+        //     gameSyncManager = FindFirstObjectByType<GameSyncManager>();
+        // }
+        // 
+        // if (gameSyncManager == null)
+        // {
+        //     Debug.LogError("GameController: GameSyncManager not found!");
+        // }
         
         // NetworkGameManagerの参照を取得してイベントを登録
         networkGameManager = GetComponent<NetworkGameManager>();
