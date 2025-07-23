@@ -27,6 +27,7 @@ public class GameUIManager : MonoBehaviour
         GameEvents.OnWinnerDetermined += DisplayWinnerMessage;
         GameEvents.OnPlayerCountChanged += UpdateWaitingStatus;
         GameEvents.OnPlayerRegistered += CreatePlayerScoreUI; // プレイヤー登録時にUI作成
+        GameEvents.OnCountdownUpdate += DisplayCountdown; // カウントダウン表示
     }
 
     void Start()
@@ -75,6 +76,9 @@ public class GameUIManager : MonoBehaviour
         {
             case GameState.WaitingForPlayers:
                 statusWindow.text = "Waiting for players...";
+                break;
+            case GameState.CountdownToStart:
+                // カウントダウン中はカウントダウン表示が優先される
                 break;
             case GameState.InGame:
                 statusWindow.text = "Game is running";
@@ -160,6 +164,15 @@ public class GameUIManager : MonoBehaviour
         }
     }
 
+    // カウントダウン表示
+    private void DisplayCountdown(int remainingSeconds)
+    {
+        if (statusWindow != null)
+        {
+            statusWindow.text = $"Game starting in {remainingSeconds}...";
+        }
+    }
+
     // 勝者メッセージフラグをリセット（ゲーム再開時に使用）
     public void ResetWinnerMessageFlag()
     {
@@ -173,5 +186,6 @@ public class GameUIManager : MonoBehaviour
         GameEvents.OnWinnerDetermined -= DisplayWinnerMessage;
         GameEvents.OnPlayerCountChanged -= UpdateWaitingStatus;
         GameEvents.OnPlayerRegistered -= CreatePlayerScoreUI;
+        GameEvents.OnCountdownUpdate -= DisplayCountdown;
     }
 }

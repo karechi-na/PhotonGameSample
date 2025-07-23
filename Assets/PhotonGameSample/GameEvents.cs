@@ -22,6 +22,9 @@ public static class GameEvents
     
     // スコア更新完了イベント
     public static event Action<int, int> OnScoreUpdateCompleted; // (playerId, newScore)
+    
+    // カウントダウンイベント
+    public static event Action<int> OnCountdownUpdate; // (remainingSeconds)
 
     // イベント発火メソッド
     public static void TriggerGameStateChanged(GameState newState)
@@ -57,5 +60,10 @@ public static class GameEvents
     public static void TriggerScoreUpdateCompleted(int playerId, int newScore)
     {
         OnScoreUpdateCompleted?.Invoke(playerId, newScore);
+    }
+    
+    public static void TriggerCountdownUpdate(int remainingSeconds)
+    {
+        OnCountdownUpdate?.Invoke(remainingSeconds);
     }
 }

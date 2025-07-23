@@ -14,9 +14,14 @@ using System.Collections.Generic;
 public class GameController : MonoBehaviour
 {
     const int MAX_PLAYERS = 2; // Maximum number of players allowed in the game
+    const int COUNTDOWN_SECONDS = 5; // カウントダウン時間（秒）
 
     // ゲーム終了管理
     private bool gameEnded = false;
+    
+    // カウントダウン管理
+    private bool isCountdownRunning = false;
+    private Coroutine countdownCoroutine;
 
     /// <summary>
     /// external references to managers components.
@@ -230,22 +235,67 @@ public class GameController : MonoBehaviour
         // 実際に登録されたプレイヤー数でゲーム状態を判定（ネットワーク上の接続数ではなく）
         if (registeredPlayers >= MAX_PLAYERS && CurrentGameState == GameState.WaitingForPlayers)
         {
-            // 二人揃ったのでゲーム開始
-            CurrentGameState = GameState.InGame;
-            Debug.Log("GameController: All players ready! Starting game...");
-
-            // 全プレイヤーの操作を有効化
-            EnableAllPlayersInput(true);
+            // 二人揃ったのでカウントダウン開始
+            Debug.Log("GameController: All players ready! Starting countdown...");
+            StartGameCountdown();
         }
         else if (registeredPlayers < MAX_PLAYERS)
         {
             // プレイヤーが足りない場合は待機状態
+            if (CurrentGameState == GameState.CountdownToStart)
+            {
+                // カウントダウン中にプレイヤーが離脱した場合、カウントダウンを停止
+                StopGameCountdown();
+            }
             CurrentGameState = GameState.WaitingForPlayers;
             Debug.Log($"GameController: Waiting for players... ({registeredPlayers}/{MAX_PLAYERS})");
 
             // 全プレイヤーの操作を無効化
             EnableAllPlayersInput(false);
         }
+    }
+
+    // カウントダウン開始
+    private void StartGameCountdown()
+    {
+        if (isCountdownRunning) return;
+        
+        isCountdownRunning = true;
+        CurrentGameState = GameState.CountdownToStart;
+        countdownCoroutine = StartCoroutine(CountdownCoroutine());
+    }
+    
+    // カウントダウン停止
+    private void StopGameCountdown()
+    {
+        if (!isCountdownRunning) return;
+        
+        isCountdownRunning = false;
+        if (countdownCoroutine != null)
+        {
+            StopCoroutine(countdownCoroutine);
+            countdownCoroutine = null;
+        }
+        Debug.Log("GameController: Countdown stopped");
+    }
+    
+    // カウントダウンコルーチン
+    private System.Collections.IEnumerator CountdownCoroutine()
+    {
+        for (int i = COUNTDOWN_SECONDS; i > 0; i--)
+        {
+            Debug.Log($"GameController: Game starting in {i} seconds...");
+            GameEvents.TriggerCountdownUpdate(i);
+            yield return new WaitForSeconds(1f);
+        }
+        
+        // カウントダウン完了、ゲーム開始
+        isCountdownRunning = false;
+        CurrentGameState = GameState.InGame;
+        Debug.Log("GameController: Game started!");
+        
+        // 全プレイヤーの操作を有効化
+        EnableAllPlayersInput(true);
     }
 
     private void EnableAllPlayersInput(bool enabled)

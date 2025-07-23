@@ -51,13 +51,14 @@
 *   **イベントの購読:** 各コンポーネントは、`GameEvents.EventName += YourMethod;` の形式でイベントを購読し、イベント発生時に`YourMethod`が呼び出されるように設定します。これにより、イベントの発火元と購読元が直接依存することなく、柔軟なシステム構築が可能になります。
 
 **主なイベント:**
-*   `OnGameStateChanged`: ゲームの状態（待機中、ゲーム中、ゲーム終了）が変更された時。
+*   `OnGameStateChanged`: ゲームの状態（待機中、カウントダウン中、ゲーム中、ゲーム終了）が変更された時。
 *   `OnPlayerScoreChanged`: プレイヤーのスコアが変更された時。
 *   `OnWinnerDetermined`: ゲームの勝者が決定された時。
 *   `OnPlayerCountChanged`: ゲーム内のプレイヤー数が変更された時。
 *   `OnPlayerRegistered`: 新しいプレイヤーが登録された時。
 *   `OnGameEnd`: ゲームが終了した時。
 *   `OnScoreUpdateCompleted`: スコアの更新が完了した時。
+*   `OnCountdownUpdate`: ゲーム開始カウントダウンの更新時。
 
 ## 4. 各ソースコードの内容
 
@@ -216,8 +217,11 @@
 ### 5.1. ゲーム開始
 
 1.  **`GameLauncher.cs`**: Photon Cloudへの接続が成功し、セッションが開始されると、`GameLauncher.cs`は`NetworkRunner`のコールバックを通じてプレイヤーの参加を検知します。
-2.  **`GameController.cs`**: `GameLauncher.cs`からの通知を受け、`GameController.cs`はプレイヤー数をチェックします。`MAX_PLAYERS`に達すると、ゲームの状態を`WaitingForPlayers`から`InGame`に遷移させます。
-    *   **`GameEvents.TriggerGameStateChanged(GameState.InGame)`**: `GameController.cs`がゲーム状態の変更を`GameEvents`を通じて発火します。これにより、`GameUIManager.cs`などがゲーム開始UIを更新します。
+2.  **`GameController.cs`**: `GameLauncher.cs`からの通知を受け、`GameController.cs`はプレイヤー数をチェックします。`MAX_PLAYERS`に達すると、ゲームの状態を`WaitingForPlayers`から`CountdownToStart`に遷移させ、5秒のカウントダウンを開始します。
+    *   **`GameEvents.TriggerGameStateChanged(GameState.CountdownToStart)`**: `GameController.cs`がゲーム状態の変更を`GameEvents`を通じて発火します。
+    *   **`GameEvents.TriggerCountdownUpdate(remainingSeconds)`**: `GameController.cs`が1秒ごとにカウントダウンの残り時間を`GameEvents`を通じて発火します。これにより、`GameUIManager.cs`がカウントダウン表示を更新します。
+3.  **ゲーム開始**: カウントダウンが完了すると、ゲームの状態が`InGame`に遷移し、全プレイヤーの操作が有効化されます。
+    *   **`GameEvents.TriggerGameStateChanged(GameState.InGame)`**: `GameController.cs`がゲーム開始を`GameEvents`を通じて発火します。これにより、`GameUIManager.cs`などがゲーム開始UIを更新します。
 
 ### 5.2. アイテム取得とスコア表示
 
