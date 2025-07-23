@@ -25,6 +25,21 @@ public static class GameEvents
     
     // カウントダウンイベント
     public static event Action<int> OnCountdownUpdate; // (remainingSeconds)
+    
+    // ゲーム再開要求イベント
+    public static event Action OnGameRestartRequested;
+    
+    // ゲーム再開実行イベント（RPC経由）
+    public static event Action OnGameRestartExecution;
+    
+    // プレイヤーがクリックしたイベント（両方のクライアントでクリックを待つために使用）
+    public static event Action<int> OnPlayerClickedForRestart; // (playerId)
+    
+    // プレイヤー操作状態変更イベント
+    public static event Action<bool> OnPlayerInputStateChanged; // (enabled)
+    
+    // アイテムリセットイベント（RPC経由）
+    public static event Action OnItemsReset;
 
     // イベント発火メソッド
     public static void TriggerGameStateChanged(GameState newState)
@@ -65,5 +80,32 @@ public static class GameEvents
     public static void TriggerCountdownUpdate(int remainingSeconds)
     {
         OnCountdownUpdate?.Invoke(remainingSeconds);
+    }
+    
+    public static void TriggerGameRestartRequested()
+    {
+        OnGameRestartRequested?.Invoke();
+    }
+    
+    public static void TriggerGameRestartExecution()
+    {
+        UnityEngine.Debug.Log("GameEvents: ゲーム再開実行をトリガーします");
+        OnGameRestartExecution?.Invoke();
+        UnityEngine.Debug.Log("GameEvents: OnGameRestartExecution event fired");
+    }
+    
+    public static void TriggerPlayerClickedForRestart(int playerId)
+    {
+        OnPlayerClickedForRestart?.Invoke(playerId);
+    }
+    
+    public static void TriggerPlayerInputStateChanged(bool enabled)
+    {
+        OnPlayerInputStateChanged?.Invoke(enabled);
+    }
+    
+    public static void TriggerItemsReset()
+    {
+        OnItemsReset?.Invoke();
     }
 }

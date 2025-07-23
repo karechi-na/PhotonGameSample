@@ -326,6 +326,9 @@ public class GameRuleProcessor : MonoBehaviour
         // ネットワーク経由で全クライアントに送信（StateAuthorityを持つプレイヤーから）
         BroadcastWinnerMessageToAllClients(message);
         
+        // ゲーム状態を再開待ちに変更
+        StartCoroutine(SetWaitingForRestartAfterDelay());
+        
         // 処理完了フラグをリセット
         isProcessingWinnerDetermination = false;
     }
@@ -355,6 +358,27 @@ public class GameRuleProcessor : MonoBehaviour
         else
         {
             Debug.LogWarning("GameRuleProcessor: No authority player found on this client for RPC broadcast");
+        }
+    }
+
+    // 勝者発表後に少し待ってから再開待ち状態に変更
+    private System.Collections.IEnumerator SetWaitingForRestartAfterDelay()
+    {
+        // 勝者メッセージを表示する時間を確保（2秒待機）
+        yield return new WaitForSeconds(2.0f);
+        
+        Debug.Log("GameRuleProcessor: Setting game state to WaitingForRestart");
+        
+        // ゲーム状態を再開待ちに変更
+        var gameController = FindFirstObjectByType<GameController>();
+        if (gameController != null)
+        {
+            gameController.CurrentGameState = GameState.WaitingForRestart;
+            Debug.Log("GameRuleProcessor: Game state changed to WaitingForRestart");
+        }
+        else
+        {
+            Debug.LogError("GameRuleProcessor: GameController not found!");
         }
     }
 

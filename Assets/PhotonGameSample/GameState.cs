@@ -6,5 +6,6 @@ public enum GameState
     WaitingForPlayers,
     CountdownToStart,
     InGame,
-    GameOver
+    GameOver,
+    WaitingForRestart
 }

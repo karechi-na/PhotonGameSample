@@ -242,4 +242,42 @@ public class PlayerManager : MonoBehaviour
     {
         return $"Players: {PlayerCount}/{MaxPlayers} - IDs: [{string.Join(", ", allPlayerAvatars.Keys)}]";
     }
+    
+    /// <summary>
+    /// 全プレイヤーのスコアをリセット（ゲーム再開時に使用）
+    /// </summary>
+    public void ResetAllPlayersScore()
+    {
+        Debug.Log("PlayerManager: Resetting all players' scores");
+        
+        foreach (var avatarPair in allPlayerAvatars)
+        {
+            var avatar = avatarPair.Value;
+            if (avatar != null)
+            {
+                avatar.ResetScore();
+            }
+        }
+        
+        Debug.Log($"PlayerManager: Reset complete for {allPlayerAvatars.Count} players");
+    }
+    
+    /// <summary>
+    /// 全プレイヤーを初期Spawn位置に戻す（ゲーム再開時に使用）
+    /// </summary>
+    public void ResetAllPlayersToSpawnPosition()
+    {
+        Debug.Log("PlayerManager: Resetting all players to spawn position");
+        
+        foreach (var avatarPair in allPlayerAvatars)
+        {
+            var avatar = avatarPair.Value;
+            if (avatar != null)
+            {
+                avatar.ResetToSpawnPosition();
+            }
+        }
+        
+        Debug.Log($"PlayerManager: Position reset complete for {allPlayerAvatars.Count} players");
+    }
 }
