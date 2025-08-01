@@ -1,4 +1,4 @@
-using Fusion;
+﻿using Fusion;
 using UnityEngine;
 
 /// <summary>
@@ -6,8 +6,17 @@ using UnityEngine;
 /// PlayerAvatarから分離されたゲーム進行関連のRPC機能を担当
 /// ゲーム状態、カウントダウン、再開処理などのクライアント間同期を管理
 /// </summary>
+[RequireComponent(typeof(ItemManager))]
 public class GameSyncManager : NetworkBehaviour
 {
+    private ItemManager itemManager;
+
+    void Awake()
+    {
+        itemManager = GetComponent<ItemManager>();
+        // nullチェックやDebug.Logは不要
+    }
+
     /// <summary>
     /// 再開クリックを全クライアントに同期
     /// </summary>

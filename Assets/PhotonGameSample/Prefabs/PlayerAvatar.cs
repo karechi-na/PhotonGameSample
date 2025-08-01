@@ -1,8 +1,9 @@
-using Fusion;
+﻿using Fusion;
 using UnityEngine;
 using System;
 using System.Collections.Generic;
 
+[RequireComponent(typeof(NetworkCharacterController), typeof(PlayerAvatarView), typeof(ItemCatcher))]
 public class PlayerAvatar : NetworkBehaviour
 {
     [Networked]
@@ -72,10 +73,7 @@ public class PlayerAvatar : NetworkBehaviour
 
         // ItemCatcherのイベントをサブスクライブ
         var itemCatcher = GetComponent<ItemCatcher>();
-        if (itemCatcher != null)
-        {
-            itemCatcher.OnItemCaught += OnItemCaught;
-        }
+        itemCatcher.OnItemCaught += OnItemCaught;
 
         previousScore = Score;
     }

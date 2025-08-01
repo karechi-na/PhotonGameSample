@@ -1,9 +1,9 @@
-using UnityEngine;
+﻿using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
-[RequireComponent(typeof(PlayerManager))]
+[RequireComponent(typeof(PlayerManager), typeof(ItemManager))]
 public class GameRuleProcessor : MonoBehaviour
 {
     // イベントの発火
@@ -13,9 +13,7 @@ public class GameRuleProcessor : MonoBehaviour
     private bool isWaitingForScoreUpdate = false; // スコア更新待ちフラグ
     private float scoreUpdateTimeout = 3.0f; // スコア更新のタイムアウト（2.0秒→3.0秒に延長）
     private bool isProcessingWinnerDetermination = false; // 勝者決定処理中フラグ
-    
-    // 全スコア更新完了を追跡するための新しいフィールド
-    private HashSet<int> completedScoreUpdates = new HashSet<int>();
+    private HashSet<int> completedScoreUpdates = new HashSet<int>(); // 全スコア更新完了を追跡するための新しいフィールド
     private int totalPlayerCount = 2; // プレイヤー数（動的に更新される）
 
     void Awake()
@@ -28,10 +26,7 @@ public class GameRuleProcessor : MonoBehaviour
         }
 
         // ItemManagerからのイベント購読（全アイテム収集時）
-        if (GetComponent<ItemManager>() != null) // GetComponentで取得するか、SerializeFieldでアサイン
-        {
-            GetComponent<ItemManager>().OnAllItemsCollected += TriggerGameEndByRule;
-        }
+        GetComponent<ItemManager>().OnAllItemsCollected += TriggerGameEndByRule;
 
         // GameControllerからのゲーム終了イベント購読
         GameEvents.OnGameEnd += HandleGameEndedByController;
@@ -138,8 +133,7 @@ public class GameRuleProcessor : MonoBehaviour
             Debug.Log($"GameRuleProcessor: Score update completed for Player {playerId} -> {newScore}");
             completedScoreUpdates.Add(playerId);
             
-            Debug.Log($"GameRuleProcessor: Score updates completed: {completedScoreUpdates.Count}/{totalPlayerCount}");
-            
+            Debug.Log($"GameRuleProcessor: Score updates completed: {completedScoreUpdates.Count}/{totalPlayerCount}");         
             // 全プレイヤーのスコア更新が完了した場合のみ勝敗判定
             if (completedScoreUpdates.Count >= totalPlayerCount)
             {
