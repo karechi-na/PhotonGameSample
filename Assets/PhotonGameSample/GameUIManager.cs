@@ -22,6 +22,9 @@ public class GameUIManager : MonoBehaviour
     // デバッグ用：UpdatePlayerScoreUI呼び出し回数をトラッキング
     private int updateScoreUICallCount = 0;
 
+    /// <summary>
+    /// UIの初期化処理を行います。
+    /// </summary>
     void Awake()
     {
         // UIの辞書を初期化
@@ -36,12 +39,18 @@ public class GameUIManager : MonoBehaviour
         GameEvents.OnCountdownUpdate += DisplayCountdown; // カウントダウン表示
     }
 
+    /// <summary>
+    /// UIの初期状態を設定します。
+    /// </summary>
     void Start()
     {
         // 初期UIの状態を設定
         UpdateStatusWindow(GameState.WaitingForPlayers);
     }
     
+    /// <summary>
+    /// 毎フレームUIの状態を更新します。
+    /// </summary>
     void Update()
     {
         // ゲーム再開待ち状態でクリックを検知（一度だけ）
@@ -51,6 +60,9 @@ public class GameUIManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// プレイヤースコアUIの辞書を初期化します。
+    /// </summary>
     private void InitializePlayerScoreTexts()
     {
         // SerializeFieldで設定されたプレイヤースコアUIを辞書に登録
@@ -67,6 +79,10 @@ public class GameUIManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// ゲーム状態に応じてステータスウィンドウを更新します。
+    /// </summary>
+    /// <param name="newState">新しいゲーム状態</param>
     private void UpdateStatusWindow(GameState newState)
     {
         if (statusWindow == null)
@@ -102,6 +118,10 @@ public class GameUIManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// プレイヤー数に応じて待機状態を更新します。
+    /// </summary>
+    /// <param name="playerCount">現在のプレイヤー数</param>
     private void UpdateWaitingStatus(int playerCount)
     {
         // GameControllerからの参照を持つか、GameEventsを経由して現在の状態を取得
@@ -111,6 +131,10 @@ public class GameUIManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// プレイヤーのスコアUIを作成します。
+    /// </summary>
+    /// <param name="playerId">プレイヤーID</param>
     private void CreatePlayerScoreUI(int playerId)
     {
         if (playerScoreTexts.ContainsKey(playerId))
@@ -136,6 +160,11 @@ public class GameUIManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// プレイヤーのスコアUIを更新します。
+    /// </summary>
+    /// <param name="playerId">プレイヤーID</param>
+    /// <param name="newScore">新しいスコア</param>
     private void UpdatePlayerScoreUI(int playerId, int newScore)
     {
         updateScoreUICallCount++;
@@ -157,6 +186,10 @@ public class GameUIManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// 勝者メッセージを表示します。
+    /// </summary>
+    /// <param name="message">勝者メッセージ</param>
     private void DisplayWinnerMessage(string message)
     {
         if (statusWindow != null)
@@ -169,7 +202,9 @@ public class GameUIManager : MonoBehaviour
         }
     }
     
-    // 勝者メッセージ表示後、一定時間後に再開メッセージを表示
+    /// <summary>
+    /// 勝者メッセージ表示後、一定時間後に再開メッセージを表示します。
+    /// </summary>
     private System.Collections.IEnumerator ShowRestartMessageAfterDelay()
     {
         yield return new WaitForSeconds(3f);
@@ -181,7 +216,9 @@ public class GameUIManager : MonoBehaviour
         }
     }
     
-    // ゲーム再開要求
+    /// <summary>
+    /// ゲーム再開要求を送信します。
+    /// </summary>
     private void RequestGameRestart()
     {
         if (isWaitingForRestart && !hasClickedForRestart)
@@ -220,7 +257,10 @@ public class GameUIManager : MonoBehaviour
         }
     }
     
-    // ローカルプレイヤーのIDを取得
+    /// <summary>
+    /// ローカルプレイヤーのIDを取得します。
+    /// </summary>
+    /// <returns>ローカルプレイヤーのID</returns>
     private int GetLocalPlayerId()
     {
         // StateAuthorityを持つPlayerAvatarを探す
@@ -241,7 +281,10 @@ public class GameUIManager : MonoBehaviour
         return -1;
     }
 
-    // カウントダウン表示
+    /// <summary>
+    /// カウントダウンを表示します。
+    /// </summary>
+    /// <param name="remainingSeconds">残り秒数</param>
     private void DisplayCountdown(int remainingSeconds)
     {
         if (statusWindow != null)
@@ -250,7 +293,10 @@ public class GameUIManager : MonoBehaviour
         }
     }
 
-    // ローカルプレイヤーのPlayerAvatarを取得
+    /// <summary>
+    /// ローカルプレイヤーのPlayerAvatarを取得します。
+    /// </summary>
+    /// <returns>ローカルプレイヤーのPlayerAvatar</returns>
     private PlayerAvatar GetLocalPlayerAvatar()
     {
         PlayerAvatar[] allPlayers = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
@@ -265,6 +311,9 @@ public class GameUIManager : MonoBehaviour
         return null;
     }
     
+    /// <summary>
+    /// 勝者メッセージ表示フラグをリセットします。
+    /// </summary>
     public void ResetWinnerMessageFlag()
     {
         winnerMessageDisplayed = false;

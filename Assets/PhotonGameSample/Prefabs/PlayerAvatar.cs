@@ -35,7 +35,9 @@ public class PlayerAvatar : NetworkBehaviour
     // デバッグ用：OnItemCaught呼び出し回数をトラッキング
     private int onItemCaughtCallCount = 0;
 
-    // ネットワークプロパティ変更時のコールバック
+    /// <summary>
+    /// スコア変更時のネットワークコールバック。
+    /// </summary>
     private void OnScoreChangedRender()
     {
         OnScoreChanged?.Invoke(playerId, Score);
@@ -45,6 +47,9 @@ public class PlayerAvatar : NetworkBehaviour
         GameEvents.TriggerScoreUpdateCompleted(playerId, Score);
     }
 
+    /// <summary>
+    /// プレイヤーアバターのスポーン時処理。
+    /// </summary>
     public override void Spawned()
     {
         // プレイヤーIDが設定されていない場合はPlayerRefから取得
@@ -76,6 +81,11 @@ public class PlayerAvatar : NetworkBehaviour
         previousScore = Score;
     }
 
+    /// <summary>
+    /// アイテム取得時の処理。
+    /// </summary>
+    /// <param name="item">取得したアイテム</param>
+    /// <param name="playerAvatar">取得したプレイヤー</param>
     private void OnItemCaught(Item item, PlayerAvatar playerAvatar)
     {
         onItemCaughtCallCount++;
@@ -138,13 +148,17 @@ public class PlayerAvatar : NetworkBehaviour
         animator.SetFloat("MotionSpeed", 1f);
     }
 
-    // 入力の有効/無効を設定
+    /// <summary>
+    /// 入力の有効/無効を設定。
+    /// </summary>
     public void SetInputEnabled(bool enabled)
     {
         inputEnabled = enabled;
     }
 
-    // RPCで勝者メッセージを全クライアントに送信
+    /// <summary>
+    /// RPCで勝者メッセージを全クライアントに送信。
+    /// </summary>
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
     public void RPC_BroadcastWinnerMessage(string winnerMessage)
     {
@@ -153,7 +167,7 @@ public class PlayerAvatar : NetworkBehaviour
     }
     
     /// <summary>
-    /// スコアをリセット（ゲーム再開時に使用）
+    /// スコアをリセット（ゲーム再開時に使用）。
     /// </summary>
     public void ResetScore()
     {
@@ -167,7 +181,7 @@ public class PlayerAvatar : NetworkBehaviour
     }
     
     /// <summary>
-    /// プレイヤーをSpawn位置に戻す（ゲーム再開時に使用）
+    /// プレイヤーをSpawn位置に戻す（ゲーム再開時に使用）。
     /// </summary>
     public void ResetToSpawnPosition()
     {
@@ -188,7 +202,7 @@ public class PlayerAvatar : NetworkBehaviour
     }
     
     /// <summary>
-    /// 再開クリックを全クライアントに同期
+    /// 再開クリックを全クライアントに同期。
     /// </summary>
     public void NotifyRestartClick()
     {
@@ -201,7 +215,9 @@ public class PlayerAvatar : NetworkBehaviour
         }
     }
     
-    // RPC: プレイヤーの再開クリックを全クライアントに通知
+    /// <summary>
+    /// RPC: プレイヤーの再開クリックを全クライアントに通知。
+    /// </summary>
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
     private void RPC_NotifyRestartClick(int clickedPlayerId)
     {
@@ -214,7 +230,7 @@ public class PlayerAvatar : NetworkBehaviour
     }
     
     /// <summary>
-    /// カウントダウン更新を全クライアントに同期
+    /// カウントダウン更新を全クライアントに同期。
     /// </summary>
     public void NotifyCountdownUpdate(int remainingSeconds)
     {
@@ -224,7 +240,9 @@ public class PlayerAvatar : NetworkBehaviour
         }
     }
     
-    // RPC: カウントダウン更新を全クライアントに通知
+    /// <summary>
+    /// RPC: カウントダウン更新を全クライアントに通知。
+    /// </summary>
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
     private void RPC_NotifyCountdownUpdate(int remainingSeconds)
     {
@@ -232,7 +250,7 @@ public class PlayerAvatar : NetworkBehaviour
     }
     
     /// <summary>
-    /// ゲーム開始を全クライアントに同期
+    /// ゲーム開始を全クライアントに同期。
     /// </summary>
     public void NotifyGameStart()
     {
@@ -243,7 +261,7 @@ public class PlayerAvatar : NetworkBehaviour
     }
     
     /// <summary>
-    /// ゲーム状態変更を全クライアントに同期
+    /// ゲーム状態変更を全クライアントに同期。
     /// </summary>
     public void NotifyGameStateChanged(GameState newState)
     {
@@ -253,7 +271,9 @@ public class PlayerAvatar : NetworkBehaviour
         }
     }
     
-    // RPC: ゲーム状態変更を全クライアントに通知
+    /// <summary>
+    /// RPC: ゲーム状態変更を全クライアントに通知。
+    /// </summary>
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
     private void RPC_NotifyGameStateChanged(GameState newState)
     {
@@ -261,7 +281,7 @@ public class PlayerAvatar : NetworkBehaviour
     }
     
     /// <summary>
-    /// プレイヤー操作開放を全クライアントに同期
+    /// プレイヤー操作開放を全クライアントに同期。
     /// </summary>
     public void NotifyEnableAllPlayersInput(bool enabled)
     {
@@ -271,7 +291,9 @@ public class PlayerAvatar : NetworkBehaviour
         }
     }
     
-    // RPC: プレイヤー操作開放を全クライアントに通知
+    /// <summary>
+    /// RPC: プレイヤー操作開放を全クライアントに通知。
+    /// </summary>
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
     private void RPC_NotifyEnableAllPlayersInput(bool enabled)
     {
@@ -279,7 +301,7 @@ public class PlayerAvatar : NetworkBehaviour
     }
     
     /// <summary>
-    /// ゲーム再開処理を全クライアントに同期
+    /// ゲーム再開処理を全クライアントに同期。
     /// </summary>
     public void NotifyGameRestart()
     {
@@ -289,14 +311,18 @@ public class PlayerAvatar : NetworkBehaviour
         }
     }
     
-    // RPC: ゲーム再開処理を全クライアントに通知
+    /// <summary>
+    /// RPC: ゲーム再開処理を全クライアントに通知。
+    /// </summary>
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
     private void RPC_NotifyGameRestart()
     {
         GameEvents.TriggerGameRestartExecution();
     }
     
-    // アイテムリセット通知（マスタークライアントから呼び出し）
+    /// <summary>
+    /// アイテムリセット通知（マスタークライアントから呼び出し）。
+    /// </summary>
     public void NotifyItemsReset()
     {
         if (HasStateAuthority)
@@ -305,7 +331,9 @@ public class PlayerAvatar : NetworkBehaviour
         }
     }
     
-    // RPC: アイテムリセットを全クライアントに通知
+    /// <summary>
+    /// RPC: アイテムリセットを全クライアントに通知。
+    /// </summary>
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
     private void RPC_NotifyItemsReset()
     {
