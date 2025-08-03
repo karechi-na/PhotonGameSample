@@ -3,7 +3,9 @@ using TMPro;
 using Fusion;
 using System;
 
-
+/// <summary>
+/// プレイヤーのスコアなど、ゲーム内の状態を保持するシンプルなデータモデルクラス。
+/// </summary>
 public class PlayerModel
 {
     private int _score;

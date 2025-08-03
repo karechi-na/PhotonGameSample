@@ -3,6 +3,10 @@ using System.Collections.Generic;
 using UnityEngine;
 using Fusion;
 
+/// <summary>
+/// シーン内のアイテムを一括管理し、アイテムのカウント・リセット・プレイヤーとの連携を行うマネージャ。
+/// アイテムの収集状況やリセット処理、イベント発火などを担当します。
+/// </summary>
 public class ItemManager : MonoBehaviour
 {
     // イベント
@@ -238,8 +242,6 @@ public class ItemManager : MonoBehaviour
         
         // UIを更新
         OnItemCountChanged?.Invoke(itemsCollected, totalItemsInScene);
-        
-        Debug.Log($"ItemManager: Reset complete - {resetCount}/{cachedItems.Count} items restored");
     }
     
     void OnDestroy()

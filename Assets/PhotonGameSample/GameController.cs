@@ -8,8 +8,8 @@ using System.Collections.Generic;
 [RequireComponent(typeof(ItemManager), typeof(PlayerManager), typeof(GameUIManager))]
 [RequireComponent(typeof(GameRuleProcessor))]
 /// <summary>
-/// GameController is responsible for managing the game state and handling player interactions.
-/// Stay within the maximum player limit and manage player models.
+/// ゲーム全体の状態管理とプレイヤーのインタラクションを制御するメインコントローラー。
+/// プレイヤー数の管理、ゲーム進行、UIや各種マネージャとの連携を担当します。
 /// </summary>
 public class GameController : MonoBehaviour
 {
