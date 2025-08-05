@@ -1,6 +1,10 @@
 ﻿using Fusion;
 using UnityEngine;
 
+/// <summary>
+/// ネットワーク同期されるアイテムの挙動を制御するクラス。
+/// 位置の同期、移動、キャッチ時の処理、リセット処理などを担当します。
+/// </summary>
 public class Item : NetworkBehaviour // NetworkBehaviourを継承します
 {
     private Vector3 startPosition;

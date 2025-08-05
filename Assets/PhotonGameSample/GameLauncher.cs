@@ -17,6 +17,9 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
     [SerializeField]
     private NetworkPrefabRef itemPrefab;
 
+    /// <summary>
+    /// ゲーム開始時の初期化処理を非同期で行います。
+    /// </summary>
     private async void Start()
     {
         var networkRunner = Instantiate(networkRunnerPrefab);
@@ -30,6 +33,12 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
 
     void INetworkRunnerCallbacks.OnObjectExitAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player) { }
     void INetworkRunnerCallbacks.OnObjectEnterAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player) { }
+
+    /// <summary>
+    /// プレイヤーがゲームに参加したときのコールバック。
+    /// </summary>
+    /// <param name="runner">NetworkRunnerインスタンス</param>
+    /// <param name="player">参加したプレイヤー</param>
     void INetworkRunnerCallbacks.OnPlayerJoined(NetworkRunner runner, PlayerRef player)
     {
         Debug.Log($"Player {player.PlayerId} joined the game.");
