@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using TMPro;
 using System.Collections.Generic;
 
@@ -9,7 +9,7 @@ using System.Collections.Generic;
 public class GameUIManager : MonoBehaviour
 {
     [SerializeField] private TextMeshProUGUI statusWindow;
-    
+
     [Header("Player Score UI References")]
     [SerializeField] private TextMeshProUGUI player1ScoreText;
     [SerializeField] private TextMeshProUGUI player2ScoreText;
@@ -18,7 +18,7 @@ public class GameUIManager : MonoBehaviour
     private bool winnerMessageDisplayed = false; // 勝者メッセージが表示されているかのフラグ
     private bool isWaitingForRestart = false; // 再開待ち状態のフラグ
     private bool hasClickedForRestart = false; // 自分がクリックしたかのフラグ
-    
+
     // デバッグ用：UpdatePlayerScoreUI呼び出し回数をトラッキング
     private int updateScoreUICallCount = 0;
 
@@ -47,7 +47,7 @@ public class GameUIManager : MonoBehaviour
         // 初期UIの状態を設定
         UpdateStatusWindow(GameState.WaitingForPlayers);
     }
-    
+
     /// <summary>
     /// 毎フレームUIの状態を更新します。
     /// </summary>
@@ -168,7 +168,7 @@ public class GameUIManager : MonoBehaviour
     private void UpdatePlayerScoreUI(int playerId, int newScore)
     {
         updateScoreUICallCount++;
-        
+
         if (playerScoreTexts.TryGetValue(playerId, out TextMeshProUGUI targetScoreText))
         {
             targetScoreText.text = $"Player{playerId} Score: {newScore}";
@@ -177,7 +177,7 @@ public class GameUIManager : MonoBehaviour
         {
             // UI作成を試みる
             CreatePlayerScoreUI(playerId);
-            
+
             // 再度更新を試みる
             if (playerScoreTexts.TryGetValue(playerId, out targetScoreText))
             {
@@ -196,26 +196,26 @@ public class GameUIManager : MonoBehaviour
         {
             statusWindow.text = message;
             winnerMessageDisplayed = true; // フラグを設定
-            
+
             // 3秒後に再開待ち状態に移行
             StartCoroutine(ShowRestartMessageAfterDelay());
         }
     }
-    
+
     /// <summary>
     /// 勝者メッセージ表示後、一定時間後に再開メッセージを表示します。
     /// </summary>
     private System.Collections.IEnumerator ShowRestartMessageAfterDelay()
     {
         yield return new WaitForSeconds(3f);
-        
+
         if (statusWindow != null)
         {
             statusWindow.text = "Click anywhere to restart game";
             isWaitingForRestart = true;
         }
     }
-    
+
     /// <summary>
     /// ゲーム再開要求を送信します。
     /// </summary>
@@ -224,25 +224,17 @@ public class GameUIManager : MonoBehaviour
         if (isWaitingForRestart && !hasClickedForRestart)
         {
             hasClickedForRestart = true;
-            
+
             // ローカルプレイヤーのIDを取得
             int localPlayerId = GetLocalPlayerId();
-            
+
             if (localPlayerId > 0)
             {
-                // ローカルプレイヤーのPlayerAvatarを取得してRPCを送信
-                PlayerAvatar localPlayer = GetLocalPlayerAvatar();
-                
-                if (localPlayer != null)
-                {
-                    localPlayer.NotifyRestartClick();
-                }
-                else
-                {
-                    // フォールバック：直接GameEventsを使用（ローカルのみ）
-                    GameEvents.TriggerPlayerClickedForRestart(localPlayerId);
-                }
-                
+                GameSyncManager gameSyncManager = GetComponent<GameSyncManager>();
+                gameSyncManager?.NotifyRestartClick(localPlayerId);
+                // フォールバック：直接GameEventsを使用（ローカルのみ）
+                GameEvents.TriggerPlayerClickedForRestart(localPlayerId);
+
                 // UI表示を更新
                 if (statusWindow != null)
                 {
@@ -256,7 +248,7 @@ public class GameUIManager : MonoBehaviour
             }
         }
     }
-    
+
     /// <summary>
     /// ローカルプレイヤーのIDを取得します。
     /// </summary>
@@ -265,7 +257,7 @@ public class GameUIManager : MonoBehaviour
     {
         // StateAuthorityを持つPlayerAvatarを探す
         PlayerAvatar[] allPlayers = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
-        
+
         foreach (var player in allPlayers)
         {
             if (player != null)
@@ -276,7 +268,7 @@ public class GameUIManager : MonoBehaviour
                 }
             }
         }
-        
+
         // 見つからない場合は-1を返す
         return -1;
     }
@@ -300,7 +292,7 @@ public class GameUIManager : MonoBehaviour
     private PlayerAvatar GetLocalPlayerAvatar()
     {
         PlayerAvatar[] allPlayers = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
-        
+
         foreach (var player in allPlayers)
         {
             if (player != null && player.HasStateAuthority)
@@ -310,7 +302,7 @@ public class GameUIManager : MonoBehaviour
         }
         return null;
     }
-    
+
     /// <summary>
     /// 勝者メッセージ表示フラグをリセットします。
     /// </summary>

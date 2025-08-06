@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using Fusion;
@@ -44,7 +44,6 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
         Debug.Log($"Player {player.PlayerId} joined the game.");
         // クライアントのJoin時の処理を呼び出す
         OnJoindClient?.Invoke(runner, player, runner.IsSharedModeMasterClient);
-            
     }
     void INetworkRunnerCallbacks.OnPlayerLeft(NetworkRunner runner, PlayerRef player) { }
     void INetworkRunnerCallbacks.OnInput(NetworkRunner runner, NetworkInput input) { }

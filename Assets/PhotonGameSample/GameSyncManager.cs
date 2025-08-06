@@ -1,5 +1,6 @@
 ﻿using Fusion;
 using UnityEngine;
+using System;
 
 /// <summary>
 /// ゲーム進行同期管理クラス
@@ -14,7 +15,8 @@ public class GameSyncManager : NetworkBehaviour
     void Awake()
     {
         itemManager = GetComponent<ItemManager>();
-        // nullチェックやDebug.Logは不要
+        var netObj = GetComponent<NetworkObject>();
+        Debug.Log($"GameSyncManager: Awake called on {gameObject.name}, NetworkObject: {(netObj != null ? "あり" : "なし")}, ObjectId: {(netObj != null ? netObj.Id.ToString() : "N/A")}");
     }
 
     /// <summary>
@@ -26,12 +28,12 @@ public class GameSyncManager : NetworkBehaviour
         {
             // ローカルでイベントを発火
             GameEvents.TriggerPlayerClickedForRestart(playerId);
-            
+
             // 他のクライアントにRPCを送信
             RPC_NotifyRestartClick(playerId);
         }
     }
-    
+
     /// <summary>
     /// カウントダウン更新を全クライアントに同期
     /// </summary>
@@ -42,9 +44,20 @@ public class GameSyncManager : NetworkBehaviour
             RPC_NotifyCountdownUpdate(remainingSeconds);
         }
     }
-    
+
     /// <summary>
-    /// ゲーム状態変更を全クライアントに同期
+    /// ゲーム開始を全クライアントに同期。
+    /// </summary>
+    public void NotifyGameStart()
+    {
+        if (HasStateAuthority)
+        {
+            NotifyGameStateChanged(GameState.InGame);
+        }
+    }
+
+    /// <summary>
+    /// ゲーム状態変更を全クライアントに同期。
     /// </summary>
     public void NotifyGameStateChanged(GameState newState)
     {
@@ -53,7 +66,7 @@ public class GameSyncManager : NetworkBehaviour
             RPC_NotifyGameStateChanged(newState);
         }
     }
-    
+
     /// <summary>
     /// プレイヤー操作開放を全クライアントに同期
     /// </summary>
@@ -64,7 +77,7 @@ public class GameSyncManager : NetworkBehaviour
             RPC_NotifyEnableAllPlayersInput(enabled);
         }
     }
-    
+
     /// <summary>
     /// ゲーム再開処理を全クライアントに同期
     /// </summary>
@@ -75,7 +88,7 @@ public class GameSyncManager : NetworkBehaviour
             RPC_NotifyGameRestart();
         }
     }
-    
+
     /// <summary>
     /// アイテムリセット通知を全クライアントに同期
     /// </summary>
@@ -90,7 +103,7 @@ public class GameSyncManager : NetworkBehaviour
     // =============================================================================
     // RPC メソッド群
     // =============================================================================
-    
+
     /// <summary>
     /// RPC: プレイヤーの再開クリックを全クライアントに通知
     /// </summary>
@@ -102,10 +115,10 @@ public class GameSyncManager : NetworkBehaviour
         {
             return;
         }
-        
+
         GameEvents.TriggerPlayerClickedForRestart(clickedPlayerId);
     }
-    
+
     /// <summary>
     /// RPC: カウントダウン更新を全クライアントに通知
     /// </summary>
@@ -114,16 +127,17 @@ public class GameSyncManager : NetworkBehaviour
     {
         GameEvents.TriggerCountdownUpdate(remainingSeconds);
     }
-    
+
     /// <summary>
-    /// RPC: ゲーム状態変更を全クライアントに通知
+    /// RPC: ゲーム状態変更を全クライアントに通知。
     /// </summary>
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
     private void RPC_NotifyGameStateChanged(GameState newState)
     {
+        Debug.Log($"[RPC] RPC_NotifyGameStateChanged called on {gameObject.name} with state: {newState}");
         GameEvents.TriggerGameStateChanged(newState);
     }
-    
+
     /// <summary>
     /// RPC: プレイヤー操作開放を全クライアントに通知
     /// </summary>
@@ -132,7 +146,7 @@ public class GameSyncManager : NetworkBehaviour
     {
         GameEvents.TriggerPlayerInputStateChanged(enabled);
     }
-    
+
     /// <summary>
     /// RPC: ゲーム再開処理を全クライアントに通知
     /// </summary>
@@ -141,7 +155,7 @@ public class GameSyncManager : NetworkBehaviour
     {
         GameEvents.TriggerGameRestartExecution();
     }
-    
+
     /// <summary>
     /// RPC: アイテムリセットを全クライアントに通知
     /// </summary>
@@ -149,5 +163,13 @@ public class GameSyncManager : NetworkBehaviour
     private void RPC_NotifyItemsReset()
     {
         GameEvents.TriggerItemsReset();
+    }
+
+    public static event Action<GameSyncManager> OnAnyGameSyncManagerSpawned;
+
+    public override void Spawned()
+    {
+        base.Spawned();
+        OnAnyGameSyncManagerSpawned?.Invoke(this);
     }
 }

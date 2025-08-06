@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -12,7 +12,19 @@ public class NetworkGameManager : MonoBehaviour
 {
     [Header("Network Settings")]
     [SerializeField] private PlayerAvatar playerAvatarPrefab;
-    [SerializeField] private Vector3[] spawnPositions = {
+
+    // GameSyncManagerのPrefab参照をInspectorでセット
+    [SerializeField] private GameSyncManager gameSyncManagerPrefab;
+    private GameSyncManager gameSyncManagerInstance;
+    public GameSyncManager GameSyncManagerInstance
+    {
+        get
+        {
+            return gameSyncManagerInstance;
+        }
+    }
+    [SerializeField]
+    private Vector3[] spawnPositions = {
         new Vector3(-5, 2, 0),
         new Vector3(5, 2, 0),
     };
@@ -22,6 +34,7 @@ public class NetworkGameManager : MonoBehaviour
     public event Action<PlayerAvatar> OnPlayerSpawned;
     public event Action<int> OnPlayerLeft;
     public event Action OnGameEndRequested; // ゲーム終了要求イベント
+    public event Action<GameSyncManager> OnGameSyncManagerSpawned; // GameSyncManager生成時イベント
 
     // ネットワーク状態
     private bool isMasterClient = false;
@@ -59,7 +72,7 @@ public class NetworkGameManager : MonoBehaviour
     private void Start()
     {
         Debug.Log("NetworkGameManager: Start called");
-        
+
         // Startでもアイテムが存在する場合は初期化を確認
         if (itemManager != null)
         {
@@ -73,19 +86,19 @@ public class NetworkGameManager : MonoBehaviour
     private void OnJoindClient(NetworkRunner runner, PlayerRef player, bool isMasterClient)
     {
         Debug.Log($"NetworkGameManager: Client joined - Player: {player.PlayerId}, IsMaster: {isMasterClient}");
-        
         this.networkRunner = runner;
-
         if (runner.LocalPlayer == player)
         {
             if (isMasterClient)
             {
                 this.isMasterClient = true;
                 Debug.Log("NetworkGameManager: This client is now the master client");
-                
+
                 // マスタークライアントの場合、追加シーンを読み込む
                 if (runner.IsSceneAuthority)
                 {
+                    // ゲームシンクマネージャーをスポーン
+                    SpawnGameSyncManager(runner);
                     runner.LoadScene(SceneRef.FromIndex(1), LoadSceneMode.Additive);
                     Debug.Log("NetworkGameManager: Loading additional scene");
                 }
@@ -97,7 +110,6 @@ public class NetworkGameManager : MonoBehaviour
             // プレイヤーをスポーン
             StartCoroutine(SpawnPlayerAfterDelay(runner, player));
         }
-
         // イベントを発火
         OnClientJoined?.Invoke(runner, player, isMasterClient);
     }
@@ -125,7 +137,7 @@ public class NetworkGameManager : MonoBehaviour
     private IEnumerator CountItemsAfterDelay()
     {
         yield return new WaitForSeconds(1f); // シーンロード完了を待つ
-        
+
         if (itemManager != null)
         {
             itemManager.CountExistingItems();
@@ -139,14 +151,14 @@ public class NetworkGameManager : MonoBehaviour
     private IEnumerator SpawnPlayerAfterDelay(NetworkRunner runner, PlayerRef player)
     {
         Debug.Log($"NetworkGameManager: Starting player spawn for Player {player.PlayerId}");
-        
+
         // フレームを少し待つ
         yield return new WaitForEndOfFrame();
         yield return new WaitForSeconds(0.1f);
 
         var playerIndex = runner.SessionInfo.PlayerCount - 1;
         var spawnedPosition = spawnPositions[playerIndex % spawnPositions.Length];
-        
+
         Debug.Log($"NetworkGameManager: Spawning player at position {spawnedPosition}");
 
         // プレイヤーアバターをスポーン
@@ -209,7 +221,7 @@ public class NetworkGameManager : MonoBehaviour
     public string GetNetworkDebugInfo()
     {
         if (networkRunner == null) return "NetworkRunner: null";
-        
+
         return $"NetworkRunner: Connected={networkRunner.IsConnectedToServer}, " +
                $"Players={networkRunner.SessionInfo.PlayerCount}, " +
                $"IsMaster={isMasterClient}, " +
@@ -222,6 +234,18 @@ public class NetworkGameManager : MonoBehaviour
         if (gameLauncher != null)
         {
             gameLauncher.OnJoindClient -= OnJoindClient;
+        }
+    }
+
+    // GameSyncManager生成時にイベント発火
+    private void SpawnGameSyncManager(NetworkRunner runner)
+    {
+        if (gameSyncManagerInstance == null)
+        {
+            var spawnedObj = runner.Spawn(gameSyncManagerPrefab, Vector3.zero, Quaternion.identity, inputAuthority: null);
+            gameSyncManagerInstance = spawnedObj.GetComponent<GameSyncManager>();
+            // ここでイベント発火
+            OnGameSyncManagerSpawned?.Invoke(gameSyncManagerInstance);
         }
     }
 }
