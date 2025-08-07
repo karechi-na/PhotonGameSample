@@ -10,11 +10,9 @@ using System;
 [RequireComponent(typeof(ItemManager))]
 public class GameSyncManager : NetworkBehaviour
 {
-    private ItemManager itemManager;
 
     void Awake()
     {
-        itemManager = GetComponent<ItemManager>();
         var netObj = GetComponent<NetworkObject>();
         Debug.Log($"GameSyncManager: Awake called on {gameObject.name}, NetworkObject: {(netObj != null ? "あり" : "なし")}, ObjectId: {(netObj != null ? netObj.Id.ToString() : "N/A")}");
     }
@@ -163,6 +161,15 @@ public class GameSyncManager : NetworkBehaviour
     private void RPC_NotifyItemsReset()
     {
         GameEvents.TriggerItemsReset();
+    }
+
+    // 追加: StateAuthorityへのクリックリクエスト用RPC
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    public void RPC_RequestRestartClick(int playerId)
+    {
+        // StateAuthority側でのみ実行される
+        NotifyRestartClick(playerId);
+        Debug.Log($"[RPC] RPC_RequestRestartClick called by player {playerId} on {gameObject.name}");
     }
 
     public static event Action<GameSyncManager> OnAnyGameSyncManagerSpawned;

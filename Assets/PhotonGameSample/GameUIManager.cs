@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using TMPro;
 using System.Collections.Generic;
+using Fusion;
 
 /// <summary>
 /// ゲームのUI表示全般（スコア、状態メッセージ、カウントダウン等）を管理するクラス。
@@ -21,6 +22,8 @@ public class GameUIManager : MonoBehaviour
 
     // デバッグ用：UpdatePlayerScoreUI呼び出し回数をトラッキング
     private int updateScoreUICallCount = 0;
+
+    private GameSyncManager gameSyncManager;
 
     /// <summary>
     /// UIの初期化処理を行います。
@@ -119,7 +122,7 @@ public class GameUIManager : MonoBehaviour
     }
 
     /// <summary>
-    /// プレイヤー数に応じて待機状態を更新します。
+    /// プレイヤー数に応じて_WAITING状態を更新します。
     /// </summary>
     /// <param name="playerCount">現在のプレイヤー数</param>
     private void UpdateWaitingStatus(int playerCount)
@@ -225,17 +228,27 @@ public class GameUIManager : MonoBehaviour
         {
             hasClickedForRestart = true;
 
-            // ローカルプレイヤーのIDを取得
             int localPlayerId = GetLocalPlayerId();
 
             if (localPlayerId > 0)
             {
-                GameSyncManager gameSyncManager = GetComponent<GameSyncManager>();
-                gameSyncManager?.NotifyRestartClick(localPlayerId);
-                // フォールバック：直接GameEventsを使用（ローカルのみ）
-                GameEvents.TriggerPlayerClickedForRestart(localPlayerId);
+                if (gameSyncManager != null)
+                {
+                    PlayerAvatar localAvatar = GetLocalPlayerAvatar();
+                    if (localAvatar != null && localAvatar.HasStateAuthority)
+                    {
+                        gameSyncManager.NotifyRestartClick(localPlayerId);
+                    }
+                    else
+                    {
+                        gameSyncManager.RPC_RequestRestartClick(localPlayerId);
+                    }
+                }
+                else
+                {
+                    Debug.LogError("GameUIManager: GameSyncManager reference is null!");
+                }
 
-                // UI表示を更新
                 if (statusWindow != null)
                 {
                     statusWindow.text = "Waiting for other players to click...";
@@ -243,7 +256,6 @@ public class GameUIManager : MonoBehaviour
             }
             else
             {
-                // クリックフラグをリセット（再試行可能にする）
                 hasClickedForRestart = false;
             }
         }
@@ -321,5 +333,27 @@ public class GameUIManager : MonoBehaviour
         GameEvents.OnPlayerCountChanged -= UpdateWaitingStatus;
         GameEvents.OnPlayerRegistered -= CreatePlayerScoreUI;
         GameEvents.OnCountdownUpdate -= DisplayCountdown;
+    }
+
+    void OnEnable()
+    {
+        GameSyncManager.OnAnyGameSyncManagerSpawned += OnGameSyncManagerSpawned;
+    }
+    void OnDisable()
+    {
+        GameSyncManager.OnAnyGameSyncManagerSpawned -= OnGameSyncManagerSpawned;
+    }
+    private void OnGameSyncManagerSpawned(GameSyncManager instance)
+    {
+        gameSyncManager = instance;
+        Debug.Log("GameUIManager: GameSyncManager reference set via static event.");
+
+        if (gameSyncManager != null)
+        {
+            var netObj = gameSyncManager.GetComponent<NetworkObject>();
+            // NetworkRunnerの参照は必要に応じて取得
+            var runner = gameSyncManager.Runner;
+            Debug.Log($"[DEBUG] GameSyncManager: name={gameSyncManager.gameObject.name}, NetworkObjectId={(netObj != null ? netObj.Id.ToString() : "null")}, IsValid={(gameSyncManager.Object != null && gameSyncManager.Object.IsValid)}, HasStateAuthority={gameSyncManager.HasStateAuthority}, InputAuthority={(netObj != null ? netObj.InputAuthority.ToString() : "null")}, LocalPlayer={runner?.LocalPlayer}");
+        }
     }
 }
