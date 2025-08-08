@@ -1,20 +1,20 @@
-﻿using Fusion;
-using UnityEngine;
-using System;
+﻿using UnityEngine;
+using Fusion;
 
 /// <summary>
 /// ゲーム進行同期管理クラス
 /// PlayerAvatarから分離されたゲーム進行関連のRPC機能を担当
 /// ゲーム状態、カウントダウン、再開処理などのクライアント間同期を管理
 /// </summary>
-[RequireComponent(typeof(ItemManager))]
 public class GameSyncManager : NetworkBehaviour
 {
-
-    void Awake()
+    /// <summary>
+    /// 任意のクライアントからマスターへ「再開クリック」を要求する（集約用）
+    /// </summary>
+    public void RequestRestartClick(int playerId)
     {
-        var netObj = GetComponent<NetworkObject>();
-        Debug.Log($"GameSyncManager: Awake called on {gameObject.name}, NetworkObject: {(netObj != null ? "あり" : "なし")}, ObjectId: {(netObj != null ? netObj.Id.ToString() : "N/A")}");
+        Debug.Log($"GameSyncManager: RequestRestartClick from client for player {playerId}");
+        RPC_RequestRestartClick(playerId);
     }
 
     /// <summary>
@@ -26,12 +26,12 @@ public class GameSyncManager : NetworkBehaviour
         {
             // ローカルでイベントを発火
             GameEvents.TriggerPlayerClickedForRestart(playerId);
-
+            
             // 他のクライアントにRPCを送信
             RPC_NotifyRestartClick(playerId);
         }
     }
-
+    
     /// <summary>
     /// カウントダウン更新を全クライアントに同期
     /// </summary>
@@ -42,29 +42,26 @@ public class GameSyncManager : NetworkBehaviour
             RPC_NotifyCountdownUpdate(remainingSeconds);
         }
     }
-
+    
     /// <summary>
-    /// ゲーム開始を全クライアントに同期。
-    /// </summary>
-    public void NotifyGameStart()
-    {
-        if (HasStateAuthority)
-        {
-            NotifyGameStateChanged(GameState.InGame);
-        }
-    }
-
-    /// <summary>
-    /// ゲーム状態変更を全クライアントに同期。
+    /// ゲーム状態変更を全クライアントに同期
     /// </summary>
     public void NotifyGameStateChanged(GameState newState)
     {
+        Debug.Log($"GameSyncManager: NotifyGameStateChanged called with state: {newState}");
+        Debug.Log($"GameSyncManager: HasStateAuthority = {HasStateAuthority}");
+        
         if (HasStateAuthority)
         {
+            Debug.Log($"GameSyncManager: Sending RPC_NotifyGameStateChanged({newState})");
             RPC_NotifyGameStateChanged(newState);
         }
+        else
+        {
+            Debug.LogWarning($"GameSyncManager: Cannot send RPC - no state authority");
+        }
     }
-
+    
     /// <summary>
     /// プレイヤー操作開放を全クライアントに同期
     /// </summary>
@@ -75,7 +72,7 @@ public class GameSyncManager : NetworkBehaviour
             RPC_NotifyEnableAllPlayersInput(enabled);
         }
     }
-
+    
     /// <summary>
     /// ゲーム再開処理を全クライアントに同期
     /// </summary>
@@ -86,7 +83,7 @@ public class GameSyncManager : NetworkBehaviour
             RPC_NotifyGameRestart();
         }
     }
-
+    
     /// <summary>
     /// アイテムリセット通知を全クライアントに同期
     /// </summary>
@@ -101,7 +98,20 @@ public class GameSyncManager : NetworkBehaviour
     // =============================================================================
     // RPC メソッド群
     // =============================================================================
-
+    /// <summary>
+    /// RPC: 再開クリックをマスター（StateAuthority）に要求（全クライアント→マスター）
+    /// マスターは自分でイベント発火し、他クライアントへは通知RPCを配信
+    /// </summary>
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    private void RPC_RequestRestartClick(int clickedPlayerId)
+    {
+        Debug.Log($"GameSyncManager: RPC_RequestRestartClick received on master for player {clickedPlayerId}");
+        // マスターで集約
+        GameEvents.TriggerPlayerClickedForRestart(clickedPlayerId);
+        // 他クライアントに通知（自分は HasStateAuthority なので RPC_NotifyRestartClick 内でスキップされる）
+        RPC_NotifyRestartClick(clickedPlayerId);
+    }
+    
     /// <summary>
     /// RPC: プレイヤーの再開クリックを全クライアントに通知
     /// </summary>
@@ -113,29 +123,32 @@ public class GameSyncManager : NetworkBehaviour
         {
             return;
         }
-
+        
         GameEvents.TriggerPlayerClickedForRestart(clickedPlayerId);
     }
-
+    
     /// <summary>
     /// RPC: カウントダウン更新を全クライアントに通知
     /// </summary>
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
     private void RPC_NotifyCountdownUpdate(int remainingSeconds)
     {
+        Debug.Log($"GameSyncManager: RPC_NotifyCountdownUpdate received with remainingSeconds: {remainingSeconds}");
         GameEvents.TriggerCountdownUpdate(remainingSeconds);
     }
-
+    
     /// <summary>
-    /// RPC: ゲーム状態変更を全クライアントに通知。
+    /// RPC: ゲーム状態変更を全クライアントに通知
     /// </summary>
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
     private void RPC_NotifyGameStateChanged(GameState newState)
     {
-        Debug.Log($"[RPC] RPC_NotifyGameStateChanged called on {gameObject.name} with state: {newState}");
+        Debug.Log($"GameSyncManager: RPC_NotifyGameStateChanged received with state: {newState}");
+        Debug.Log($"GameSyncManager: HasStateAuthority = {HasStateAuthority}, triggering GameEvents.TriggerGameStateChanged({newState})");
         GameEvents.TriggerGameStateChanged(newState);
+        Debug.Log($"GameSyncManager: GameEvents.TriggerGameStateChanged({newState}) completed");
     }
-
+    
     /// <summary>
     /// RPC: プレイヤー操作開放を全クライアントに通知
     /// </summary>
@@ -144,7 +157,7 @@ public class GameSyncManager : NetworkBehaviour
     {
         GameEvents.TriggerPlayerInputStateChanged(enabled);
     }
-
+    
     /// <summary>
     /// RPC: ゲーム再開処理を全クライアントに通知
     /// </summary>
@@ -153,7 +166,7 @@ public class GameSyncManager : NetworkBehaviour
     {
         GameEvents.TriggerGameRestartExecution();
     }
-
+    
     /// <summary>
     /// RPC: アイテムリセットを全クライアントに通知
     /// </summary>
@@ -161,22 +174,5 @@ public class GameSyncManager : NetworkBehaviour
     private void RPC_NotifyItemsReset()
     {
         GameEvents.TriggerItemsReset();
-    }
-
-    // 追加: StateAuthorityへのクリックリクエスト用RPC
-    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
-    public void RPC_RequestRestartClick(int playerId)
-    {
-        // StateAuthority側でのみ実行される
-        NotifyRestartClick(playerId);
-        Debug.Log($"[RPC] RPC_RequestRestartClick called by player {playerId} on {gameObject.name}");
-    }
-
-    public static event Action<GameSyncManager> OnAnyGameSyncManagerSpawned;
-
-    public override void Spawned()
-    {
-        base.Spawned();
-        OnAnyGameSyncManagerSpawned?.Invoke(this);
     }
 }

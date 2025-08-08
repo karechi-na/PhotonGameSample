@@ -112,12 +112,48 @@ public class PlayerAvatar : NetworkBehaviour
         }
     }
 
-    // RPC経由でスコア更新（StateAuthorityを持たないプレイヤー用）
+        // RPC経由でスコア更新（StateAuthorityを持たないプレイヤー用）
     [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
     private void RPC_UpdateScore(int itemValue)
     {
-        int oldScore = Score;
+        // StateAuthorityを持つプレイヤーのスコアを更新
         Score += itemValue;
+    }
+
+    /// <summary>
+    /// プレイヤーのクリックをStateAuthorityに通知するRPC
+    /// </summary>
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    public void RPC_NotifyPlayerClickForRestart()
+    {
+        // StateAuthorityでのみ実行される
+        // 実際にクリックしたプレイヤーのIDを使用（this.playerId）
+        Debug.Log($"PlayerAvatar: RPC_NotifyPlayerClickForRestart called - clicked player ID: {playerId}");
+        if (HasStateAuthority)
+        {
+            // このPlayerAvatarの持ち主（playerId）がクリックしたとして処理
+            GameEvents.TriggerPlayerClickedForRestart(playerId);
+        }
+    }
+
+    /// <summary>
+    /// ゲーム再開処理を全クライアントに通知するRPC
+    /// </summary>
+    [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+    public void RPC_NotifyGameRestart()
+    {
+        GameEvents.TriggerGameRestartExecution();
+    }
+
+    /// <summary>
+    /// ゲーム再開処理を開始する（StateAuthorityのみ）
+    /// </summary>
+    public void NotifyGameRestart()
+    {
+        if (HasStateAuthority)
+        {
+            RPC_NotifyGameRestart();
+        }
     }
 
     public override void FixedUpdateNetwork()

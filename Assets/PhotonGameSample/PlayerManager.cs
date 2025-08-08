@@ -49,18 +49,106 @@ public class PlayerManager : MonoBehaviour
         int checkCount = 0;
         while (true)
         {
-            yield return new WaitForSeconds(2.0f); // より長い間隔（フォールバック用）
+            yield return new WaitForSeconds(1.5f); // 少し間隔を延ばす
             checkCount++;
 
-            var allAvatars = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
+            Debug.Log($"PlayerManager: ContinuousPlayerCheck #{checkCount} - Current registered players: {allPlayerAvatars.Count}");
             
+            // 現在登録されているプレイヤーの詳細を表示
+            if (allPlayerAvatars.Count > 0)
+            {
+                var registeredIds = string.Join(", ", allPlayerAvatars.Keys);
+                Debug.Log($"PlayerManager: Currently registered player IDs: [{registeredIds}]");
+                
+                foreach (var kvp in allPlayerAvatars)
+                {
+                    var registeredAvatar = kvp.Value;
+                    if (registeredAvatar != null)
+                    {
+                        Debug.Log($"PlayerManager: Registered Player {kvp.Key} - GameObject: {registeredAvatar.gameObject.name}, InstanceID: {registeredAvatar.GetInstanceID()}, Active: {registeredAvatar.gameObject.activeInHierarchy}");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"PlayerManager: Registered Player {kvp.Key} has null avatar reference!");
+                    }
+                }
+            }
+
+            var allAvatars = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
+            Debug.Log($"PlayerManager: Found {allAvatars.Length} PlayerAvatars in scene");
+            
+            // すべてのPlayerAvatarの詳細情報を出力
+            for (int i = 0; i < allAvatars.Length; i++)
+            {
+                var avatar = allAvatars[i];
+                if (avatar != null)
+                {
+                    Debug.Log($"PlayerManager: Avatar[{i}] - GameObject: {avatar.gameObject.name}, playerId: {avatar.playerId}, InstanceID: {avatar.GetInstanceID()}");
+                    Debug.Log($"PlayerManager: Avatar[{i}] - HasStateAuthority: {avatar.HasStateAuthority}, HasInputAuthority: {avatar.HasInputAuthority}");
+                    Debug.Log($"PlayerManager: Avatar[{i}] - Object.HasStateAuthority: {avatar.Object.HasStateAuthority}, Object.HasInputAuthority: {avatar.Object.HasInputAuthority}");
+                    Debug.Log($"PlayerManager: Avatar[{i}] - NickName: '{avatar.NickName.Value}', GameObject.activeInHierarchy: {avatar.gameObject.activeInHierarchy}");
+                }
+                else
+                {
+                    Debug.LogWarning($"PlayerManager: Avatar[{i}] is null");
+                }
+            }
+            
+            bool foundNewPlayer = false;
             foreach (var avatar in allAvatars)
             {
-                if (avatar != null && !allPlayerAvatars.ContainsKey(avatar.playerId))
+                if (avatar != null)
                 {
-                    Debug.Log($"PlayerManager: Found unregistered player {avatar.playerId}, registering...");
-                    RegisterPlayerAvatar(avatar);
+                    Debug.Log($"PlayerManager: Checking avatar - GameObject: {avatar.gameObject.name}, playerId: {avatar.playerId}");
+                    Debug.Log($"PlayerManager: Avatar NetworkBehaviour info - HasStateAuthority: {avatar.HasStateAuthority}, HasInputAuthority: {avatar.HasInputAuthority}");
+                    Debug.Log($"PlayerManager: Avatar Network Status - Object.HasStateAuthority: {avatar.Object.HasStateAuthority}, Object.HasInputAuthority: {avatar.Object.HasInputAuthority}");
+                    
+                    if (!allPlayerAvatars.ContainsKey(avatar.playerId))
+                    {
+                        // playerId が 0 の場合は警告を出して登録をスキップ
+                        if (avatar.playerId <= 0)
+                        {
+                            Debug.LogWarning($"PlayerManager: Avatar has invalid playerId: {avatar.playerId}. GameObject: {avatar.gameObject.name}, InstanceID: {avatar.GetInstanceID()}");
+                            Debug.LogWarning($"PlayerManager: This might be a network sync issue or invalid spawn. Avatar will be ignored.");
+                            
+                            // 無効なPlayerAvatarが古いものかどうかチェック
+                            if (avatar.NickName.Value == null || avatar.NickName.Value == "")
+                            {
+                                Debug.LogWarning($"PlayerManager: Avatar has empty NickName, this might be an old/invalid spawn");
+                            }
+                            continue;
+                        }
+                        
+                        Debug.Log($"PlayerManager: Found unregistered player {avatar.playerId}, registering...");
+                        Debug.Log($"PlayerManager: Avatar details - GameObject: {avatar.gameObject.name}, playerId: {avatar.playerId}, IsNull: {avatar == null}");
+                        
+                        try
+                        {
+                            Debug.Log($"PlayerManager: Calling RegisterPlayerAvatar for player {avatar.playerId}");
+                            RegisterPlayerAvatar(avatar);
+                            Debug.Log($"PlayerManager: RegisterPlayerAvatar completed for player {avatar.playerId}");
+                            foundNewPlayer = true;
+                        }
+                        catch (System.Exception ex)
+                        {
+                            Debug.LogError($"PlayerManager: Exception in RegisterPlayerAvatar for player {avatar.playerId}: {ex.Message}");
+                            Debug.LogError($"PlayerManager: Exception stack trace: {ex.StackTrace}");
+                        }
+                    }
+                    else
+                    {
+                        Debug.Log($"PlayerManager: Player {avatar.playerId} is already registered, skipping");
+                    }
                 }
+                else
+                {
+                    Debug.LogWarning("PlayerManager: Found null avatar in scene");
+                }
+            }
+            
+            if (!foundNewPlayer)
+            {
+                Debug.Log($"PlayerManager: No new players found in check #{checkCount}");
             }
         }
     }
@@ -70,28 +158,53 @@ public class PlayerManager : MonoBehaviour
     /// </summary>
     public void RegisterPlayerAvatar(PlayerAvatar avatar)
     {
+        Debug.Log($"PlayerManager: RegisterPlayerAvatar ENTRY - avatar null check: {avatar == null}");
+        
         if (avatar == null)
         {
             Debug.LogError("PlayerManager: RegisterPlayerAvatar called with null avatar!");
             return;
         }
         
+        Debug.Log($"PlayerManager: RegisterPlayerAvatar called for playerId: {avatar.playerId}");
+        Debug.Log($"PlayerManager: Current registered players before: [{string.Join(", ", allPlayerAvatars.Keys)}]");
+        Debug.Log($"PlayerManager: ContainsKey check for {avatar.playerId}: {allPlayerAvatars.ContainsKey(avatar.playerId)}");
+        
         if (!allPlayerAvatars.ContainsKey(avatar.playerId))
         {
+            int previousPlayerCount = allPlayerAvatars.Count; // 登録前のプレイヤー数を記録
+            
+            Debug.Log($"PlayerManager: Adding player {avatar.playerId} to dictionary");
             allPlayerAvatars[avatar.playerId] = avatar;
+            
+            Debug.Log($"PlayerManager: Subscribing to OnScoreChanged for player {avatar.playerId}");
             avatar.OnScoreChanged += HandlePlayerScoreChanged;
 
             Debug.Log($"PlayerManager: Registered Player {avatar.playerId} (Total: {allPlayerAvatars.Count})");
 
             // イベント発火
             OnPlayerRegistered?.Invoke(avatar);
-            OnPlayerCountChanged?.Invoke(allPlayerAvatars.Count);
+            
+            // プレイヤー数が実際に変わった場合のみイベント発火
+            if (allPlayerAvatars.Count != previousPlayerCount)
+            {
+                OnPlayerCountChanged?.Invoke(allPlayerAvatars.Count);
+                Debug.Log($"PlayerManager: Player count changed from {previousPlayerCount} to {allPlayerAvatars.Count}");
+            }
+            else
+            {
+                Debug.LogWarning($"PlayerManager: Player count did not change - this should not happen!");
+            }
             
             // GameEventsも発火
             GameEvents.TriggerPlayerRegistered(avatar.playerId);
 
             // 初期スコアもイベントで通知
             HandlePlayerScoreChanged(avatar.playerId, avatar.Score);
+        }
+        else
+        {
+            Debug.Log($"PlayerManager: Player {avatar.playerId} is already registered, skipping...");
         }
     }
 

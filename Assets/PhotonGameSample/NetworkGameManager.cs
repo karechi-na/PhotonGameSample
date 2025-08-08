@@ -85,10 +85,12 @@ public class NetworkGameManager : MonoBehaviour
     /// </summary>
     private void OnJoindClient(NetworkRunner runner, PlayerRef player, bool isMasterClient)
     {
+        Debug.Log($"NetworkGameManager: OnJoindClient called - Player: {player.PlayerId}, IsMaster: {isMasterClient}, LocalPlayer: {runner.LocalPlayer.PlayerId}");
         Debug.Log($"NetworkGameManager: Client joined - Player: {player.PlayerId}, IsMaster: {isMasterClient}");
         this.networkRunner = runner;
         if (runner.LocalPlayer == player)
         {
+            Debug.Log($"NetworkGameManager: This is LOCAL player {player.PlayerId}");
             if (isMasterClient)
             {
                 this.isMasterClient = true;
@@ -103,12 +105,21 @@ public class NetworkGameManager : MonoBehaviour
                     Debug.Log("NetworkGameManager: Loading additional scene");
                 }
             }
+            else
+            {
+                Debug.Log($"NetworkGameManager: This is NON-MASTER client {player.PlayerId}");
+            }
 
             // ItemManagerを全クライアントで初期化
             InitializeItemManager(runner);
 
             // プレイヤーをスポーン
+            Debug.Log($"NetworkGameManager: Starting SpawnPlayerAfterDelay for local player {player.PlayerId}");
             StartCoroutine(SpawnPlayerAfterDelay(runner, player));
+        }
+        else
+        {
+            Debug.Log($"NetworkGameManager: This is REMOTE player {player.PlayerId}, skipping spawn");
         }
         // イベントを発火
         OnClientJoined?.Invoke(runner, player, isMasterClient);
@@ -162,7 +173,11 @@ public class NetworkGameManager : MonoBehaviour
         Debug.Log($"NetworkGameManager: Spawning player at position {spawnedPosition}");
 
         // プレイヤーアバターをスポーン
-        var spawnedObject = runner.Spawn(playerAvatarPrefab, spawnedPosition, Quaternion.identity,
+        var spawnedObject = runner.Spawn(
+            playerAvatarPrefab,
+            spawnedPosition,
+            Quaternion.identity,
+            player,
             onBeforeSpawned: (_, networkObject) =>
             {
                 var playerAvatar = networkObject.GetComponent<PlayerAvatar>();
@@ -240,12 +255,23 @@ public class NetworkGameManager : MonoBehaviour
     // GameSyncManager生成時にイベント発火
     private void SpawnGameSyncManager(NetworkRunner runner)
     {
+        Debug.Log("NetworkGameManager: SpawnGameSyncManager called");
+        
         if (gameSyncManagerInstance == null)
         {
+            Debug.Log("NetworkGameManager: Spawning GameSyncManager prefab");
             var spawnedObj = runner.Spawn(gameSyncManagerPrefab, Vector3.zero, Quaternion.identity, inputAuthority: null);
             gameSyncManagerInstance = spawnedObj.GetComponent<GameSyncManager>();
+            
+            Debug.Log($"NetworkGameManager: GameSyncManager spawned successfully: {gameSyncManagerInstance != null}");
+            
             // ここでイベント発火
             OnGameSyncManagerSpawned?.Invoke(gameSyncManagerInstance);
+            Debug.Log("NetworkGameManager: OnGameSyncManagerSpawned event fired");
+        }
+        else
+        {
+            Debug.Log("NetworkGameManager: GameSyncManager already exists, skipping spawn");
         }
     }
 }

@@ -6,11 +6,10 @@ using System.Collections;
 using System.Collections.Generic;
 
 [RequireComponent(typeof(ItemManager), typeof(PlayerManager), typeof(GameUIManager))]
-[RequireComponent(typeof(NetworkGameManager))]
 [RequireComponent(typeof(GameRuleProcessor))]
 /// <summary>
-/// ゲーム全体の状態管理とプレイヤーのインタラクションを制御するメインコントローラー。
-/// プレイヤー数の管理、ゲーム進行、UIや各種マネージャとの連携を担当します。
+/// GameController is responsible for managing the game state and handling player interactions.
+/// Stay within the maximum player limit and manage player models.
 /// </summary>
 public class GameController : MonoBehaviour
 {
@@ -19,16 +18,13 @@ public class GameController : MonoBehaviour
 
     // ゲーム終了管理
     private bool gameEnded = false;
-
+    
     // カウントダウン管理
     private bool isCountdownRunning = false;
     private Coroutine countdownCoroutine;
-
+    
     // クリック待機管理
     private HashSet<int> playersClickedForRestart = new HashSet<int>();
-
-    // フィールド追加
-    private bool isProcessingRemoteInputState = false;
 
     /// <summary>
     /// external references to managers components.
@@ -36,14 +32,15 @@ public class GameController : MonoBehaviour
     [SerializeField] private ItemManager itemManager;
     [SerializeField] private NetworkGameManager networkGameManager;
     [SerializeField] private PlayerManager playerManager; // PlayerManagerとして直接宣言
-    private GameSyncManager gameSyncManager; // GameUIManagerとして直接宣言
-    [SerializeField] private GameUIManager gameUIManager; // RequireComponentで取得
-    [SerializeField] private GameRuleProcessor gameRuleProcessor; // ゲームルール処理
-    // private GameSyncManager gameSyncManager; // ゲーム進行の同期管理 - TODO: 後で有効化
+    private GameUIManager gameUIManager; // RequireComponentで取得
+    private GameRuleProcessor gameRuleProcessor; // ゲームルール処理
+    private GameSyncManager gameSyncManager; // ゲーム進行の同期管理
 
     private PlayerModel localPlayerModel; // ローカルプレイヤーのモデル
 
     private GameState currentGameState = GameState.WaitingForPlayers;
+    // 再入防止用フラグ（GameEvents経由での自己呼び出しループを抑止）
+    private bool isChangingState = false;
     public GameState CurrentGameState
     {
         get { return currentGameState; }
@@ -54,11 +51,26 @@ public class GameController : MonoBehaviour
                 // 状態が変わらない場合は何もしない
                 return;
             }
-            else
+            
+            if (isChangingState)
             {
-                Debug.Log("Game State Changed: " + currentGameState);
-                OnChangeState(value);
-                currentGameState = value;
+                // 既に状態変更処理中の場合は再入をスキップ
+                Debug.Log($"GameController: Skipping re-entrant state change to {value} from {currentGameState}");
+                return;
+            }
+
+            var prev = currentGameState;
+            currentGameState = value; // 先に状態を更新してからハンドラを呼ぶ（再入抑止）
+            Debug.Log($"GameController: Game State Changed {prev} -> {currentGameState}");
+
+            isChangingState = true;
+            try
+            {
+                OnChangeState(currentGameState);
+            }
+            finally
+            {
+                isChangingState = false;
             }
 
         }
@@ -67,30 +79,55 @@ public class GameController : MonoBehaviour
     void Awake()
     {
         Debug.Log("GameController: Awake() - Initializing components");
-
-        // GameUIManagerの参照を確認
+        
+        // GameUIManagerの参照を取得
+        gameUIManager = GetComponent<GameUIManager>();
         if (gameUIManager == null)
         {
             Debug.LogError("GameController: GameUIManager not found!");
         }
-
-        // NetworkGameManagerの参照を確認してイベントを登録
-        if (networkGameManager == null)
+        
+        // GameSyncManagerの参照を取得（NetworkGameManagerからのSpawn完了まで待機）
+        gameSyncManager = GetComponent<GameSyncManager>();
+        if (gameSyncManager == null)
         {
-            Debug.LogError("GameController: NetworkGameManager not found!");
+            gameSyncManager = FindFirstObjectByType<GameSyncManager>();
+        }
+        
+        if (gameSyncManager == null)
+        {
+            Debug.LogWarning("GameController: GameSyncManager not found yet - will wait for NetworkGameManager spawn event");
         }
         else
         {
+            Debug.Log("GameController: GameSyncManager successfully initialized");
+        }
+        
+        // NetworkGameManagerの参照を取得してイベントを登録
+        networkGameManager = GetComponent<NetworkGameManager>();
+        if (networkGameManager == null)
+        {
+            networkGameManager = FindFirstObjectByType<NetworkGameManager>();
+        }
+        
+        if (networkGameManager != null)
+        {
+            networkGameManager.OnClientJoined += OnClientJoined;
             networkGameManager.OnPlayerSpawned += OnPlayerSpawned;
             networkGameManager.OnPlayerLeft += OnPlayerLeft;
             networkGameManager.OnGameEndRequested += OnGameEndRequested;
-            // GameSyncManager生成イベントを購読
+            
+            // GameSyncManagerのSpawn完了イベントを購読
             networkGameManager.OnGameSyncManagerSpawned += OnGameSyncManagerSpawned;
+        }
+        else
+        {
+            Debug.LogError("GameController: NetworkGameManager not found!");
         }
 
         // PlayerManagerの参照を取得してイベントを登録
         playerManager = GetComponent<PlayerManager>();
-
+        
         if (playerManager != null)
         {
             playerManager.OnPlayerRegistered += OnPlayerRegistered;
@@ -113,22 +150,37 @@ public class GameController : MonoBehaviour
         {
             Debug.LogError("GameController: GameRuleProcessor not found!");
         }
-
+        
         // ゲーム再開イベント購読
         GameEvents.OnGameRestartRequested += RestartGame;
         GameEvents.OnGameRestartExecution += ExecuteRestart;
         GameEvents.OnPlayerClickedForRestart += OnPlayerClickedForRestart;
         GameEvents.OnPlayerInputStateChanged += OnPlayerInputStateChanged;
-
+        GameEvents.OnGameStateChanged += OnGameStateChangedFromRPC;
+        
         Debug.Log("GameController: Initialized and events subscribed");
     }
 
     void Start()
     {
-        // ItemManagerのイベントを登録
-        itemManager.OnItemCountChanged += OnItemCountChanged;
+        itemManager = GetComponent<ItemManager>();
+        
+        // ItemManagerの初期化
+        InitializeItemManager();
     }
 
+    private void InitializeItemManager()
+    {
+        if (itemManager != null)
+        {
+            // ItemManagerのイベントを登録
+            itemManager.OnItemCountChanged += OnItemCountChanged;
+        }
+        else
+        {
+            Debug.LogWarning("ItemManager is not assigned!");
+        }
+    }
 
     private void OnItemCountChanged(int collectedCount, int totalCount)
     {
@@ -143,9 +195,12 @@ public class GameController : MonoBehaviour
     private void OnPlayerRegistered(PlayerAvatar avatar)
     {
         Debug.Log($"GameController: Player {avatar.playerId} registered");
-
+        
         // ItemManagerにプレイヤーを登録
-        itemManager.RegisterPlayer(avatar);
+        if (itemManager != null)
+        {
+            itemManager.RegisterPlayer(avatar);
+        }
     }
 
     private void OnPlayerUnregistered(int playerId)
@@ -153,13 +208,18 @@ public class GameController : MonoBehaviour
         Debug.Log($"GameController: Player {playerId} unregistered via PlayerManager");
     }
 
+    // デバッグ用：OnPlayerCountChangedの呼び出し回数
+    private int playerCountChangedCallCount = 0;
+    
     private void OnPlayerCountChanged(int playerCount)
     {
-        Debug.Log($"GameController: Player count changed to {playerCount}");
-
+        playerCountChangedCallCount++;
+        Debug.Log($"GameController: OnPlayerCountChanged #{playerCountChangedCallCount} - Player count changed to {playerCount}");
+        Debug.Log($"GameController: OnPlayerCountChanged stack trace: {System.Environment.StackTrace}");
+        
         // GameEventsを通じてUIに伝達
         GameEvents.TriggerPlayerCountChanged(playerCount);
-
+        
         // ゲーム状態をチェック（これが主要なゲーム状態管理トリガー）
         if (networkGameManager != null && networkGameManager.NetworkRunner != null)
         {
@@ -174,61 +234,42 @@ public class GameController : MonoBehaviour
 
         gameEnded = true;
         CurrentGameState = GameState.GameOver;
-
-        // まとめてログ出力
-        Debug.Log(
-            "GameController: Game ended\n"
-            + $"GameController: EndGame - Clearing player click list (was: [{string.Join(", ", playersClickedForRestart)}])\n"
-            + "GameController: EndGame - Player click list cleared"
-        );
+        Debug.Log("GameController: Game ended");
 
         // 全プレイヤーの入力を無効化
         EnableAllPlayersInput(false);
 
-        // プレイヤークリック待機をリセット
+        // *** 重要：プレイヤークリック待機をリセット ***
+        Debug.Log($"GameController: EndGame - Clearing player click list (was: [{string.Join(", ", playersClickedForRestart)}])");
         playersClickedForRestart.Clear();
+        Debug.Log("GameController: EndGame - Player click list cleared");
 
         // GameRuleProcessorに勝者決定を委任
         GameEvents.TriggerGameEnd();
     }
-
+    
     // ゲーム再開処理
     private void RestartGame()
     {
         Debug.Log("=== GameController: RestartGame() called ===");
         Debug.Log($"GameController: RESTART CALL STACK: {System.Environment.StackTrace}");
         Debug.Log($"GameController: IsMasterClient: {(networkGameManager != null ? networkGameManager.IsMasterClient : false)}");
-
+        
         // マスタークライアントがRPCで全クライアントに再開実行を通知
         if (networkGameManager != null && networkGameManager.IsMasterClient)
         {
             Debug.Log("GameController: This client is MasterClient - sending RPC for restart");
-
-            // StateAuthorityを持つPlayerAvatarを探す（マスタークライアントのPlayerAvatar）
-            PlayerAvatar[] playerAvatars = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
-            Debug.Log($"GameController: Found {playerAvatars.Length} PlayerAvatars in scene");
-
-            PlayerAvatar masterPlayerAvatar = null;
-            foreach (var avatar in playerAvatars)
+            
+            // GameSyncManagerを使用してゲーム再開を通知
+            if (gameSyncManager != null)
             {
-                Debug.Log($"GameController: PlayerAvatar {avatar.playerId} - HasStateAuthority: {avatar.HasStateAuthority}");
-                if (avatar.HasStateAuthority)
-                {
-                    masterPlayerAvatar = avatar;
-                    Debug.Log($"GameController: Found master PlayerAvatar - ID: {avatar.playerId}");
-                    break;
-                }
-            }
-
-            if (masterPlayerAvatar != null)
-            {
-                Debug.Log($"GameController: Using master PlayerAvatar {masterPlayerAvatar.playerId} to send restart RPC");
+                Debug.Log("GameController: Using GameSyncManager to send restart notification");
                 gameSyncManager.NotifyGameRestart();
-                Debug.Log("GameController: RPC sent via master PlayerAvatar for game restart");
+                Debug.Log("GameController: RPC sent via GameSyncManager for game restart");
             }
             else
             {
-                Debug.LogWarning("GameController: No PlayerAvatar with StateAuthority found - executing restart locally");
+                Debug.LogWarning("GameController: GameSyncManager not available - executing restart locally");
                 ExecuteRestart();
             }
         }
@@ -237,74 +278,56 @@ public class GameController : MonoBehaviour
             Debug.Log("GameController: This client is NOT MasterClient - waiting for RPC");
         }
     }
-
+    
     // ゲーム再開処理を実行
     private void ExecuteRestart()
     {
-        // まとめてログ出力
-        Debug.Log(
-            "=== GameController: ExecuteRestart() called ===\n"
-            + $"GameController: EXECUTE RESTART CALL STACK: {System.Environment.StackTrace}\n"
-            + $"GameController: Current game state before restart: {CurrentGameState}\n"
-            + $"GameController: Player count: {(playerManager != null ? playerManager.PlayerCount : 0)}\n"
-            + $"GameController: IsMasterClient: {(networkGameManager != null ? networkGameManager.IsMasterClient : false)}"
-        );
-
+        Debug.Log("=== GameController: ExecuteRestart() called ===");
+        Debug.Log($"GameController: EXECUTE RESTART CALL STACK: {System.Environment.StackTrace}");
+        Debug.Log($"GameController: Current game state before restart: {CurrentGameState}");
+        Debug.Log($"GameController: Player count: {(playerManager != null ? playerManager.PlayerCount : 0)}");
+        Debug.Log($"GameController: IsMasterClient: {(networkGameManager != null ? networkGameManager.IsMasterClient : false)}");
+        
         // プレイヤークリック待機をリセット
         playersClickedForRestart.Clear();
         Debug.Log("GameController: Cleared player click list");
-
+        
         // ゲーム状態をリセット
         gameEnded = false;
-
+        
         // UIの勝者メッセージフラグをリセット
         if (gameUIManager != null)
         {
             gameUIManager.ResetWinnerMessageFlag();
         }
-
+        
         // プレイヤーを初期位置に戻す
         if (playerManager != null)
         {
             playerManager.ResetAllPlayersToSpawnPosition();
         }
-
+        
         // アイテムマネージャーをリセット（RPC経由）
         if (itemManager != null)
         {
+            // マスタークライアントがRPCでアイテムリセットを通知
             if (networkGameManager != null && networkGameManager.IsMasterClient)
             {
-                // まとめてログ出力
-                Debug.Log(
-                    "GameController: Master client sending item reset RPC\n"
-                    + $"GameController: Found {FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None).Length} PlayerAvatars for item reset"
-                );
-
-                PlayerAvatar[] playerAvatars = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
-                PlayerAvatar masterPlayerAvatar = null;
-
-                foreach (var avatar in playerAvatars)
+                Debug.Log("GameController: Master client sending item reset RPC");
+                
+                // GameSyncManagerを使用してアイテムリセットを通知
+                if (gameSyncManager != null)
                 {
-                    if (avatar.HasStateAuthority)
-                    {
-                        masterPlayerAvatar = avatar;
-                        Debug.Log($"GameController: Found master PlayerAvatar for item reset - ID: {avatar.playerId}");
-                        break;
-                    }
-                }
-
-                if (masterPlayerAvatar != null)
-                {
-                    Debug.Log($"GameController: Using master PlayerAvatar {masterPlayerAvatar.playerId} for item reset RPC");
-                    masterPlayerAvatar.NotifyItemsReset();
-                    Debug.Log("GameController: Item reset RPC sent via master PlayerAvatar");
+                    Debug.Log("GameController: Using GameSyncManager for item reset notification");
+                    gameSyncManager.NotifyItemsReset();
+                    Debug.Log("GameController: Item reset RPC sent via GameSyncManager");
                 }
                 else
                 {
-                    Debug.LogWarning("GameController: No master PlayerAvatar found - using local item reset\n"
-                        + "GameController: Calling itemManager.ResetAllItemsViaRPC() as fallback\n"
-                        + "GameController: Local item reset completed");
+                    Debug.LogWarning("GameController: GameSyncManager not available - using local item reset");
+                    Debug.Log("GameController: Calling itemManager.ResetAllItemsViaRPC() as fallback");
                     itemManager.ResetAllItemsViaRPC();
+                    Debug.Log("GameController: Local item reset completed");
                 }
             }
             else
@@ -316,13 +339,13 @@ public class GameController : MonoBehaviour
         {
             Debug.LogError("GameController: itemManager is null - cannot reset items");
         }
-
+        
         // プレイヤーのスコアをリセット
         if (playerManager != null)
         {
             playerManager.ResetAllPlayersScore();
         }
-
+        
         // カウントダウンからゲーム開始
         if (playerManager != null && playerManager.PlayerCount >= MAX_PLAYERS)
         {
@@ -333,42 +356,77 @@ public class GameController : MonoBehaviour
             CurrentGameState = GameState.WaitingForPlayers;
         }
     }
-
+    
     // プレイヤーがクリックした時の処理
     private void OnPlayerClickedForRestart(int playerId)
     {
+        Debug.Log($"=== GameController: OnPlayerClickedForRestart ENTRY ===");
+        Debug.Log($"GameController: *** RECEIVED PLAYER ID: {playerId} *** - CALL #{System.DateTime.Now:HH:mm:ss.fff}");
+        Debug.Log($"GameController: Current game state: {CurrentGameState}");
+        Debug.Log($"GameController: Players already clicked: [{string.Join(", ", playersClickedForRestart)}]");
+        Debug.Log($"GameController: playersClickedForRestart.Count = {playersClickedForRestart.Count}");
+        Debug.Log($"GameController: MAX_PLAYERS = {MAX_PLAYERS}");
+        Debug.Log($"GameController: networkGameManager = {(networkGameManager != null ? "exists" : "null")}");
+        if (networkGameManager != null)
+        {
+            Debug.Log($"GameController: IsMasterClient = {networkGameManager.IsMasterClient}");
+            Debug.Log($"GameController: This client info - IsMasterClient: {networkGameManager.IsMasterClient}");
+        }
+        
         // 既にクリック済みの場合は無視
         if (playersClickedForRestart.Contains(playerId))
         {
             Debug.Log($"GameController: Player {playerId} already clicked, ignoring");
+            Debug.Log($"GameController: Current click list before ignoring: [{string.Join(", ", playersClickedForRestart)}]");
+            Debug.Log($"GameController: This is a DUPLICATE CLICK for Player {playerId}");
             return;
         }
-
+        
         // クリックリストに追加
         playersClickedForRestart.Add(playerId);
+        
+        Debug.Log($"GameController: Player {playerId} added to click list. Total: {playersClickedForRestart.Count}/{MAX_PLAYERS}");
         Debug.Log($"GameController: Click list now contains: [{string.Join(", ", playersClickedForRestart)}]");
-
+        
         // 全プレイヤーがクリックしたらゲーム再開
+        Debug.Log($"GameController: Checking if all players clicked - Current: {playersClickedForRestart.Count}, Required: {MAX_PLAYERS}");
         if (playersClickedForRestart.Count >= MAX_PLAYERS)
         {
-            Debug.Log(
-                "=== GameController: ALL PLAYERS CLICKED ===\n"
-                + $"GameController: *** CONDITION MET *** Total clicks: {playersClickedForRestart.Count}/{MAX_PLAYERS}\n"
-                + $"GameController: Clicked players: [{string.Join(", ", playersClickedForRestart)}]\n"
-                + $"GameController: networkGameManager = {(networkGameManager != null ? "not null" : "null")}");
-
-            // マスタークライアントのみが再開処理を実行
-            if (networkGameManager.IsMasterClient)
+            Debug.Log("=== GameController: ALL PLAYERS CLICKED ===");
+            Debug.Log($"GameController: *** CONDITION MET *** Total clicks: {playersClickedForRestart.Count}/{MAX_PLAYERS}");
+            Debug.Log($"GameController: Clicked players: [{string.Join(", ", playersClickedForRestart)}]");
+            Debug.Log($"GameController: networkGameManager = {(networkGameManager != null ? "not null" : "null")}");
+            
+            if (networkGameManager != null)
             {
+                Debug.Log($"GameController: IsMasterClient = {networkGameManager.IsMasterClient}");
+            }
+            
+            // マスタークライアントのみが再開処理を実行
+            if (networkGameManager != null && networkGameManager.IsMasterClient)
+            {
+                Debug.Log("GameController: *** THIS IS MASTER CLIENT - CALLING RestartGame() ***");
                 RestartGame();
+            }
+            else
+            {
+                Debug.Log("GameController: *** THIS IS NOT MASTER CLIENT - WAITING FOR RPC ***");
             }
         }
         else
         {
-            Debug.Log(
-                $"GameController: Still waiting for {MAX_PLAYERS - playersClickedForRestart.Count} more players to click\n"
-                + $"GameController: Current condition: {playersClickedForRestart.Count} >= {MAX_PLAYERS} = {playersClickedForRestart.Count >= MAX_PLAYERS}");
+            Debug.Log($"GameController: Still waiting for {MAX_PLAYERS - playersClickedForRestart.Count} more players to click");
+            Debug.Log($"GameController: Current condition: {playersClickedForRestart.Count} >= {MAX_PLAYERS} = {playersClickedForRestart.Count >= MAX_PLAYERS}");
         }
+    }
+
+    /// <summary>
+    /// NetworkGameManagerからの接続通知を受け取る
+    /// </summary>
+    private void OnClientJoined(NetworkRunner runner, PlayerRef player, bool isMasterClient)
+    {
+        Debug.Log($"GameController: Client joined - Player: {player.PlayerId}, IsMaster: {isMasterClient}");
+
     }
 
     /// <summary>
@@ -377,20 +435,13 @@ public class GameController : MonoBehaviour
     private void OnPlayerSpawned(PlayerAvatar playerAvatar)
     {
         Debug.Log($"GameController: Player {playerAvatar.playerId} spawned");
-
-        // GameSyncManagerの参照をここでセット
-        if (gameSyncManager == null && networkGameManager != null)
-        {
-            gameSyncManager = networkGameManager.GameSyncManagerInstance;
-            if (gameSyncManager != null)
-                Debug.Log("GameController: GameSyncManager instance set in OnPlayerSpawned");
-            else
-                Debug.LogWarning("GameController: GameSyncManager instance is still null in OnPlayerSpawned");
-        }
-
+        
         // PlayerManagerに直接登録を指示
-        playerManager.RegisterPlayerAvatar(playerAvatar);
-
+        if (playerManager != null)
+        {
+            playerManager.RegisterPlayerAvatar(playerAvatar);
+        }
+        
         // スポーン後に再度ゲーム状態をチェック
         if (networkGameManager != null && networkGameManager.NetworkRunner != null)
         {
@@ -407,38 +458,65 @@ public class GameController : MonoBehaviour
         EndGame();
     }
 
-    void OnEnable()
+    /// <summary>
+    /// NetworkGameManagerからのGameSyncManagerスポーン完了通知を受け取る
+    /// </summary>
+    private void OnGameSyncManagerSpawned(GameSyncManager spawnedGameSyncManager)
     {
-        GameSyncManager.OnAnyGameSyncManagerSpawned += OnGameSyncManagerSpawned;
-    }
-    void OnDisable()
-    {
-        GameSyncManager.OnAnyGameSyncManagerSpawned -= OnGameSyncManagerSpawned;
-    }
-    private void OnGameSyncManagerSpawned(GameSyncManager instance)
-    {
-        gameSyncManager = instance;
-        Debug.Log("GameController: GameSyncManager reference set via static event.");
+        Debug.Log("GameController: GameSyncManager spawned and received from NetworkGameManager");
+        gameSyncManager = spawnedGameSyncManager;
+        
+        if (gameSyncManager != null)
+        {
+            Debug.Log("GameController: GameSyncManager reference successfully updated");
+        }
+        else
+        {
+            Debug.LogError("GameController: Received null GameSyncManager from spawn event!");
+        }
     }
 
+    // デバッグ用：CheckPlayerCountAndUpdateGameStateの呼び出し回数
+    private int checkPlayerCountCallCount = 0;
+    
     private void CheckPlayerCountAndUpdateGameState(NetworkRunner runner)
     {
+        // 呼び出し回数をカウント
+        checkPlayerCountCallCount++;
+        
         int playerCount = runner.SessionInfo.PlayerCount;
         int registeredPlayers = playerManager != null ? playerManager.PlayerCount : 0;
-
+        
+        Debug.Log($"GameController: CheckPlayerCountAndUpdateGameState #{checkPlayerCountCallCount} - registeredPlayers: {registeredPlayers}, MAX_PLAYERS: {MAX_PLAYERS}, CurrentGameState: {CurrentGameState}, IsMasterClient: {(networkGameManager != null ? networkGameManager.IsMasterClient : false)}");
+        
+        // ゲームが既に進行中またはカウントダウン中の場合は何もしない
+        if (CurrentGameState != GameState.WaitingForPlayers)
+        {
+            Debug.Log($"GameController: Game state is {CurrentGameState}, skipping state check (call #{checkPlayerCountCallCount})");
+            return;
+        }
+        
         // 実際に登録されたプレイヤー数でゲーム状態を判定（ネットワーク上の接続数ではなく）
         if (registeredPlayers >= MAX_PLAYERS && CurrentGameState == GameState.WaitingForPlayers)
         {
-            // 二人揃ったのでカウントダウン開始
-            Debug.Log("GameController: All players ready! Starting countdown...");
-            StartGameCountdown();
+            // マスタークライアントのみがカウントダウンを開始
+            if (networkGameManager != null && networkGameManager.IsMasterClient)
+            {
+                Debug.Log("GameController: All players ready! Starting countdown... (Master Client)");
+                StartGameCountdown();
+            }
+            else
+            {
+                Debug.Log("GameController: All players ready, but this is not master client - waiting for countdown from master");
+            }
         }
         else if (registeredPlayers < MAX_PLAYERS)
         {
             // プレイヤーが足りない場合は待機状態
             if (CurrentGameState == GameState.CountdownToStart)
             {
-                // カウンドダウン中にプレイヤーが離脱した場合、カウントダウンを停止
+                // カウントダウン中にプレイヤーが離脱した場合、カウントダウンを停止
+                Debug.Log("GameController: Player left during countdown, stopping countdown");
                 StopGameCountdown();
             }
             CurrentGameState = GameState.WaitingForPlayers;
@@ -452,31 +530,41 @@ public class GameController : MonoBehaviour
     // カウントダウン開始
     private void StartGameCountdown()
     {
-        Debug.Log($"[DEBUG] StartGameCountdown: isCountdownRunning={isCountdownRunning}, IsMasterClient={networkGameManager.IsMasterClient}, gameSyncManager={(gameSyncManager != null ? "not null" : "null")}, CurrentGameState={CurrentGameState}");
-        if (isCountdownRunning)
-            return;
-        if (networkGameManager.IsMasterClient)
+        if (isCountdownRunning) return;
+        
+        Debug.Log($"GameController: StartGameCountdown called - IsMasterClient: {(networkGameManager != null ? networkGameManager.IsMasterClient : false)}");
+        
+        // マスタークライアント以外では何もしない
+        if (networkGameManager == null || !networkGameManager.IsMasterClient)
         {
-            isCountdownRunning = true;
-            CurrentGameState = GameState.CountdownToStart;
-            if (gameSyncManager != null)
-            {
-                gameSyncManager.NotifyGameStateChanged(GameState.CountdownToStart);
-            }
-            Debug.Log("[DEBUG] StartGameCountdown: StartCoroutine(CountdownCoroutine()) called");
-            countdownCoroutine = StartCoroutine(CountdownCoroutine());
+            Debug.Log("GameController: Not master client - skipping countdown start");
+            return;
+        }
+        
+        // マスタークライアントのみがカウントダウンを開始
+        isCountdownRunning = true;
+        CurrentGameState = GameState.CountdownToStart;
+        
+        // GameSyncManagerを使用してカウントダウン開始状態を同期
+        if (gameSyncManager != null)
+        {
+            Debug.Log("GameController: Calling gameSyncManager.NotifyGameStateChanged(CountdownToStart)");
+            gameSyncManager.NotifyGameStateChanged(GameState.CountdownToStart);
+            Debug.Log("GameController: gameSyncManager.NotifyGameStateChanged(CountdownToStart) completed");
         }
         else
         {
-            Debug.Log("[DEBUG] StartGameCountdown: Not master client, skipping countdown start");
+            Debug.LogError("GameController: gameSyncManager is null - cannot send countdown state RPC!");
         }
+        
+        countdownCoroutine = StartCoroutine(CountdownCoroutine());
     }
-
+    
     // カウントダウン停止
     private void StopGameCountdown()
     {
         if (!isCountdownRunning) return;
-
+        
         isCountdownRunning = false;
         if (countdownCoroutine != null)
         {
@@ -485,48 +573,75 @@ public class GameController : MonoBehaviour
         }
         Debug.Log("GameController: Countdown stopped");
     }
-
+    
     // カウントダウンコルーチン
     private System.Collections.IEnumerator CountdownCoroutine()
     {
-        Debug.Log("[DEBUG] CountdownCoroutine started");
+        // マスタークライアントのPlayerAvatarを取得
+        PlayerAvatar masterPlayerAvatar = GetMasterPlayerAvatar();
+        
         for (int i = COUNTDOWN_SECONDS; i > 0; i--)
         {
             Debug.Log($"GameController: Game starting in {i} seconds...");
-
+            
             // ローカルでイベント発火
             GameEvents.TriggerCountdownUpdate(i);
-
-            // GameSyncManager経由で全クライアントに通知
+            
+            // GameSyncManagerでRPCを他のクライアントにも送信
             if (gameSyncManager != null)
             {
                 gameSyncManager.NotifyCountdownUpdate(i);
             }
-
+            
             yield return new WaitForSeconds(1f);
         }
-
+        
+        // カウントダウン完了、ゲーム開始
         isCountdownRunning = false;
         CurrentGameState = GameState.InGame;
         Debug.Log("GameController: Game started!");
-
+        
+        // ローカルでゲーム状態変更
+        GameEvents.TriggerGameStateChanged(GameState.InGame);
+        
+        // GameSyncManagerでRPCを他のクライアントにゲーム開始を通知
+        if (gameSyncManager != null)
+        {
+            gameSyncManager.NotifyGameStateChanged(GameState.InGame);
+        }
+        
+        // ローカルで全プレイヤーの操作を有効化
         EnableAllPlayersInput(true);
-
+        
+        // GameSyncManagerでRPCを他のクライアントの操作も有効化
         if (gameSyncManager != null)
         {
             gameSyncManager.NotifyEnableAllPlayersInput(true);
-            gameSyncManager.NotifyGameStart();
         }
     }
-
+    
+    // マスタークライアントのPlayerAvatarを取得
+    private PlayerAvatar GetMasterPlayerAvatar()
+    {
+        if (playerManager != null)
+        {
+            foreach (var playerPair in playerManager.AllPlayers)
+            {
+                var player = playerPair.Value;
+                if (player != null && player.HasStateAuthority)
+                {
+                    return player;
+                }
+            }
+        }
+        return null;
+    }
 
     // プレイヤー操作状態変更時の処理
     private void OnPlayerInputStateChanged(bool enabled)
     {
-        // イベント経由で呼ばれた場合は再帰防止フラグを立てる
-        isProcessingRemoteInputState = true;
+        Debug.Log($"GameController: OnPlayerInputStateChanged called - enabled: {enabled}");
         EnableAllPlayersInput(enabled);
-        isProcessingRemoteInputState = false;
     }
 
     private void EnableAllPlayersInput(bool enabled)
@@ -534,12 +649,6 @@ public class GameController : MonoBehaviour
         if (playerManager != null)
         {
             playerManager.SetAllPlayersInputEnabled(enabled);
-
-            // 再帰防止: ローカル発火時のみ通知
-            if (!isProcessingRemoteInputState && gameSyncManager != null)
-            {
-                gameSyncManager.NotifyEnableAllPlayersInput(enabled);
-            }
         }
         else
         {
@@ -550,14 +659,17 @@ public class GameController : MonoBehaviour
     // プレイヤー離脱時の処理（GameLauncherから呼び出される）
     public void OnPlayerLeft(int playerId)
     {
-        playerManager.UnregisterPlayerAvatar(playerId);
-        Debug.Log($"GameController: Player {playerId} left the game");
-
-        // プレイヤー数が足りなくなったら待機状態に戻す
-        if (playerManager.PlayerCount < MAX_PLAYERS && CurrentGameState == GameState.InGame)
+        if (playerManager != null)
         {
-            CurrentGameState = GameState.WaitingForPlayers;
-            EnableAllPlayersInput(false);
+            playerManager.UnregisterPlayerAvatar(playerId);
+            Debug.Log($"GameController: Player {playerId} left the game");
+
+            // プレイヤー数が足りなくなったら待機状態に戻す
+            if (playerManager.PlayerCount < MAX_PLAYERS && CurrentGameState == GameState.InGame)
+            {
+                CurrentGameState = GameState.WaitingForPlayers;
+                EnableAllPlayersInput(false);
+            }
         }
     }
 
@@ -586,35 +698,72 @@ public class GameController : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// GameSyncManagerからのRPCによるゲーム状態変更を処理
+    /// </summary>
+    private void OnGameStateChangedFromRPC(GameState newState)
+    {
+        Debug.Log($"GameController: OnGameStateChangedFromRPC called with state: {newState}");
+        Debug.Log($"GameController: Current local state: {CurrentGameState}, IsMasterClient: {(networkGameManager != null ? networkGameManager.IsMasterClient : false)}");
+        
+        // 非マスタークライアントでのみRPCによる状態変更を適用
+        if (networkGameManager == null || !networkGameManager.IsMasterClient)
+        {
+            Debug.Log($"GameController: Non-master client applying RPC state change: {CurrentGameState} -> {newState}");
+            
+            // ローカル状態を更新（CurrentGameStateのsetterを使用してOnChangeStateを呼び出す）
+            CurrentGameState = newState;
+            
+            // 特定の状態変更に対する追加処理
+            switch (newState)
+            {
+                case GameState.CountdownToStart:
+                    Debug.Log("GameController: Starting local countdown state (from RPC)");
+                    isCountdownRunning = true;
+                    break;
+                case GameState.InGame:
+                    Debug.Log("GameController: Game started (from RPC)");
+                    isCountdownRunning = false;
+                    break;
+            }
+        }
+        else
+        {
+            Debug.Log("GameController: Master client - ignoring RPC state change (local state takes precedence)");
+        }
+    }
+
     private void OnChangeState(GameState newState)
     {
+        // 状態が変わったときの処理をここに記述します
         switch (newState)
         {
             case GameState.WaitingForPlayers:
                 Debug.Log("Waiting for players to join...");
-
+                
                 // GameEventsを通じてUIに伝達
                 GameEvents.TriggerGameStateChanged(newState);
-                EnableAllPlayersInput(false);
+                
                 // ゲーム状態をリセット
                 ResetGameState();
                 break;
             case GameState.CountdownToStart:
-                EnableAllPlayersInput(false);
+                Debug.Log("GameController: OnChangeState - CountdownToStart state activated");
+                
+                // GameEventsを通じてUIに伝達
+                GameEvents.TriggerGameStateChanged(newState);
                 break;
             case GameState.InGame:
                 Debug.Log("Game started!");
+                
                 // GameEventsを通じてUIに伝達
                 GameEvents.TriggerGameStateChanged(newState);
+                
                 EnableAllPlayersInput(true);
                 break;
             case GameState.GameOver:
                 Debug.Log("Game Over!");
                 // 勝者決定はEndGame()で既に実行済み
-                EnableAllPlayersInput(false);
-                break;
-            case GameState.WaitingForRestart:
-                EnableAllPlayersInput(false);
                 break;
         }
     }
@@ -622,7 +771,7 @@ public class GameController : MonoBehaviour
     private void ResetGameState()
     {
         gameEnded = false;
-
+        
         // *** 重要：プレイヤークリック待機をリセット ***
         Debug.Log($"GameController: ResetGameState - Clearing player click list (was: [{string.Join(", ", playersClickedForRestart)}])");
         playersClickedForRestart.Clear();
@@ -635,10 +784,28 @@ public class GameController : MonoBehaviour
         }
     }
 
+    private IEnumerator RestartGameAfterDelay()
+    {
+        yield return new WaitForSeconds(5.0f); // 5秒間結果を表示
+
+        // ゲームを再開（プレイヤーが2人いる場合）
+        if (playerManager != null && playerManager.PlayerCount >= MAX_PLAYERS)
+        {
+            CurrentGameState = GameState.InGame;
+            EnableAllPlayersInput(true);
+        }
+        else
+        {
+            CurrentGameState = GameState.WaitingForPlayers;
+        }
+    }
+
     void OnDestroy()
     {
+        // NetworkGameManagerのイベント登録解除
         if (networkGameManager != null)
         {
+            networkGameManager.OnClientJoined -= OnClientJoined;
             networkGameManager.OnPlayerSpawned -= OnPlayerSpawned;
             networkGameManager.OnPlayerLeft -= OnPlayerLeft;
             networkGameManager.OnGameEndRequested -= OnGameEndRequested;
@@ -659,12 +826,12 @@ public class GameController : MonoBehaviour
         {
             gameRuleProcessor.OnGameEndTriggered -= EndGame;
         }
-
+        
         // ゲーム再開イベント購読解除
         GameEvents.OnGameRestartRequested -= RestartGame;
         GameEvents.OnGameRestartExecution -= ExecuteRestart;
         GameEvents.OnPlayerClickedForRestart -= OnPlayerClickedForRestart;
         GameEvents.OnPlayerInputStateChanged -= OnPlayerInputStateChanged;
+        GameEvents.OnGameStateChanged -= OnGameStateChangedFromRPC;
     }
 }
-
