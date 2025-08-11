@@ -3,6 +3,7 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using Fusion;
+using PhotonGameSample.Infrastructure; // 追加
 
 /// <summary>
 /// ネットワーク関連の管理を担当するコンポーネント
@@ -51,6 +52,7 @@ public class NetworkGameManager : MonoBehaviour
     void Awake()
     {
         // GameLauncherの参照を取得
+        ServiceRegistry.Register<NetworkGameManager>(this); // フェーズ1登録
         gameLauncher = FindFirstObjectByType<GameLauncher>();
         if (gameLauncher != null)
         {

@@ -4,6 +4,7 @@ using Fusion;
 using TMPro;
 using System.Collections;
 using System.Collections.Generic;
+using PhotonGameSample.Infrastructure; // 追加
 
 [RequireComponent(typeof(ItemManager), typeof(PlayerManager), typeof(GameUIManager))]
 [RequireComponent(typeof(GameRuleProcessor))]
@@ -79,6 +80,7 @@ public class GameController : MonoBehaviour
     void Awake()
     {
         Debug.Log("GameController: Awake() - Initializing components");
+        ServiceRegistry.Register<GameController>(this); // フェーズ1登録
         
         // GameUIManagerの参照を取得
         gameUIManager = GetComponent<GameUIManager>();

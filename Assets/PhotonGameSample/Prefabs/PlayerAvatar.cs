@@ -40,10 +40,16 @@ public class PlayerAvatar : NetworkBehaviour
     /// </summary>
     private void OnScoreChangedRender()
     {
-        OnScoreChanged?.Invoke(playerId, Score);
+        // レプリケーションで値が届いた側（通常は非 StateAuthority）で UI へイベント連携
+        // 既に権限側で GameEvents.TriggerPlayerScoreChanged 済みの場合でも二重発火は UI 上問題ないが、
+        // 重複検出したい場合は previousScore で差分チェック可能。
+        if (!HasStateAuthority)
+        {
+            Debug.Log($"PlayerAvatar[{playerId}] OnScoreChangedRender replicated Score={Score}");
+            OnScoreChanged?.Invoke(playerId, Score);
+            GameEvents.TriggerPlayerScoreChanged(playerId, Score);
+        }
         previousScore = Score;
-        
-        // スコア更新完了を通知（ゲーム終了判定で使用）
         GameEvents.TriggerScoreUpdateCompleted(playerId, Score);
     }
 
@@ -89,35 +95,41 @@ public class PlayerAvatar : NetworkBehaviour
     private void OnItemCaught(Item item, PlayerAvatar playerAvatar)
     {
         onItemCaughtCallCount++;
-        
-        // アイテムの重複処理防止チェック
+        Debug.Log($"PlayerAvatar[{playerId}] OnItemCaught call#{onItemCaughtCallCount} item='{item.name}' HasStateAuthority={HasStateAuthority} HasInputAuthority={HasInputAuthority} local?={Object.HasInputAuthority}");
+        // 重複処理防止
         int itemInstanceId = item.GetInstanceID();
-        
         if (processedItems.Contains(itemInstanceId))
         {
+            Debug.Log($"PlayerAvatar[{playerId}] Item {item.name} already processed, skipping");
             return;
         }
         processedItems.Add(itemInstanceId);
 
         if (HasStateAuthority)
         {
-            // 自分がStateAuthorityを持つ場合：直接スコア更新
-            int oldScore = Score;
-            Score += item.itemValue;
+            ApplyScoreDelta(item.itemValue, reason:$"OnItemCaught-authority item={item.name}");
         }
         else
         {
-            // StateAuthorityを持たない場合：RPC経由でスコア更新を要求
+            Debug.Log($"PlayerAvatar[{playerId}] forwarding score delta via RPC_UpdateScore value={item.itemValue}");
             RPC_UpdateScore(item.itemValue);
         }
     }
 
-        // RPC経由でスコア更新（StateAuthorityを持たないプレイヤー用）
+    private void ApplyScoreDelta(int delta, string reason)
+    {
+        int before = Score;
+        Score = Score + delta;
+        Debug.Log($"PlayerAvatar[{playerId}] ApplyScoreDelta +{delta} ({reason}) before={before} after={Score} HasStateAuthority={HasStateAuthority}");
+        // 権限側で即イベント発火（UI 反映）
+        GameEvents.TriggerPlayerScoreChanged(playerId, Score);
+    }
+
     [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
     private void RPC_UpdateScore(int itemValue)
     {
-        // StateAuthorityを持つプレイヤーのスコアを更新
-        Score += itemValue;
+        Debug.Log($"PlayerAvatar[{playerId}] RPC_UpdateScore received value={itemValue} (StateAuthority={HasStateAuthority})");
+        ApplyScoreDelta(itemValue, reason:"RPC_UpdateScore");
     }
 
     /// <summary>
@@ -211,6 +223,8 @@ public class PlayerAvatar : NetworkBehaviour
         {
             int oldScore = Score;
             Score = 0;
+            processedItems.Clear(); // ラウンド再開時に取得済みアイテム履歴をクリア
+            Debug.Log($"PlayerAvatar[{playerId}] ResetScore old={oldScore} new={Score} processedItems cleared");
             // スコア変更をイベントで通知
             GameEvents.TriggerPlayerScoreChanged(playerId, Score);
         }

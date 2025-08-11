@@ -226,23 +226,27 @@ public class ItemManager : MonoBehaviour
     /// </summary>
     public void ResetAllItemsViaRPC()
     {
-        // アイテム収集数をリセット
+        // 権限外クライアントが Networked 値を書き換えると再同期で上書きされ欠落が発生する恐れがあるため
+        // StateAuthority を持つアイテムのみ ResetItem() を呼び出し RPC_ActivateItem を経由して全クライアント更新する。
         itemsCollected = 0;
-        
-        // キャッシュされたアイテムを使用してリセット
-        int resetCount = 0;
+        int authoritativeResets = 0;
+        int skipped = 0;
         foreach (var item in cachedItems)
         {
-            if (item != null)
+            if (item == null) continue;
+            if (item.Object != null && item.Object.HasStateAuthority)
             {
-                // 権限チェックなしでアイテムをリセット
-                item.ForceResetItem();
-                resetCount++;
+                item.ResetItem(); // 内部で RPC_ActivateItem() を発行
+                authoritativeResets++;
+            }
+            else
+            {
+                // 非権限側は何もしない（StateAuthority の同期を待つ）
+                skipped++;
             }
         }
-        
-        // UIを更新
         OnItemCountChanged?.Invoke(itemsCollected, totalItemsInScene);
+        Debug.Log($"ItemManager: ResetAllItemsViaRPC authoritativeResets={authoritativeResets} skipped(non-authority)={skipped} totalCached={cachedItems.Count}");
     }
     
     void OnDestroy()

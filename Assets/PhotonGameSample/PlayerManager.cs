@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using Fusion;
+using PhotonGameSample.Infrastructure; // 追加
 
 /// <summary>
 /// プレイヤー関連の処理を管理するクラス
@@ -30,6 +31,7 @@ public class PlayerManager : MonoBehaviour
     void Start()
     {
         Debug.Log("PlayerManager: Started");
+        ServiceRegistry.Register<PlayerManager>(this); // フェーズ1登録
         
         // 継続的なプレイヤーチェックは開始（フォールバック用）
         StartCoroutine(ContinuousPlayerCheck());

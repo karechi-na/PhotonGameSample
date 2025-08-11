@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using TMPro;
 using System.Collections.Generic;
+using PhotonGameSample.Infrastructure; // 追加
 
 public class GameUIManager : MonoBehaviour
 {
@@ -27,6 +28,7 @@ public class GameUIManager : MonoBehaviour
     {
         // UIの辞書を初期化
         InitializePlayerScoreTexts();
+        ServiceRegistry.Register<GameUIManager>(this); // フェーズ1登録
 
     // 参照の取得（存在すれば）
     networkGameManager = FindFirstObjectByType<NetworkGameManager>();

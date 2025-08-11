@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using Fusion;
+using PhotonGameSample.Infrastructure; // 追加
 
 /// <summary>
 /// ゲーム進行同期管理クラス
@@ -8,6 +9,11 @@ using Fusion;
 /// </summary>
 public class GameSyncManager : NetworkBehaviour
 {
+    private void Awake()
+    {
+        ServiceRegistry.Register<GameSyncManager>(this); // フェーズ1登録
+    }
+    
     /// <summary>
     /// 任意のクライアントからマスターへ「再開クリック」を要求する（集約用）
     /// </summary>
