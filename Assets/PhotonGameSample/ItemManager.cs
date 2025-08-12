@@ -1,7 +1,9 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using Fusion;
+using PhotonGameSample.Infrastructure; // ServiceRegistry 参照用 追加
 
 /// <summary>
 /// シーン内のアイテムを一括管理し、アイテムのカウント・リセット・プレイヤーとの連携を行うマネージャ。
@@ -16,6 +18,8 @@ public class ItemManager : MonoBehaviour
     // アイテム管理
     private int totalItemsInScene = 0; // シーン内の全アイテム数（固定）
     private int itemsCollected = 0;
+    private bool hasValidTotal = false; // アイテム総数が確定したか
+    public static ItemManager Instance { get; private set; }
     
     // すべてのアイテムの参照をキャッシュ（非アクティブでも参照可能）
     private List<Item> cachedItems = new List<Item>();
@@ -27,54 +31,91 @@ public class ItemManager : MonoBehaviour
     public int CollectedItems => itemsCollected;
     public int RemainingItems => totalItemsInScene - itemsCollected;
     
+    void Awake()
+    {
+        if (Instance != null && Instance != this)
+        {
+            Debug.LogWarning($"ItemManager: Duplicate instance detected. Destroying this one. existingID={Instance.GetInstanceID()} newID={GetInstanceID()}");
+            Destroy(this);
+            return;
+        }
+        Instance = this;
+        Debug.Log($"ItemManager: Awake singleton set instanceID={GetInstanceID()}");
+    }
+
     void Start()
     {
         CountExistingItems();
-        RegisterToPlayerEvents();
-        
+
+        // PlayerManager が既に登録されていればアタッチ、まだなら登録イベントを待つ
+        TryAttachPlayerManager();
+        ServiceRegistry.OnAnyRegistered += HandleServiceRegistered; // 遅延登録対応
+
         // アイテムリセットイベントを購読
         GameEvents.OnItemsReset += ResetAllItemsViaRPC;
     }
-    
-    /// <summary>
-    /// 全プレイヤーのItemCatcherイベントに登録（初期化時のみ使用）
-    /// </summary>
-    private void RegisterToPlayerEvents()
+
+    private void HandleServiceRegistered(Type type, object instance)
     {
-        // 既存のプレイヤーのItemCatcherに登録（初期化時の処理）
-        PlayerAvatar[] players = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
-        Debug.Log($"ItemManager: Found {players.Length} existing players during initialization");
-        
-        foreach (var player in players)
+        if (type == typeof(PlayerManager))
         {
-            RegisterPlayer(player);
+            TryAttachPlayerManager();
         }
     }
+
+    private void TryAttachPlayerManager()
+    {
+        var pm = ServiceRegistry.GetOrNull<PlayerManager>();
+        if (pm == null) return;
+
+        // 既存プレイヤーを登録（Find を排除）
+        foreach (var kv in pm.AllPlayers)
+        {
+            if (kv.Value != null)
+            {
+                RegisterPlayer(kv.Value);
+            }
+        }
+
+        // PlayerManager のイベントに追加 (重複購読防止用に一旦解除してから追加)
+        pm.OnPlayerRegistered -= RegisterPlayer; // 直接 delegate 変換不可のためラップ
+        pm.OnPlayerRegistered += RegisterPlayer;
+    }
+    
+    // 旧 RegisterToPlayerEvents() は PlayerManager 経由イベント方式へ移行したため削除
     
     /// <summary>
     /// プレイヤーがアイテムをキャッチした時の処理
     /// </summary>
     private void HandleItemCaught(Item item, PlayerAvatar player)
     {
-        Debug.Log($"ItemManager: Player {player.NickName.Value} caught item (value: {item.itemValue})");
-        
-        // アイテムをシーンから無効化
+        Debug.Log($"ItemManager: HandleItemCaught start total={totalItemsInScene} collected={itemsCollected} hasValid={hasValidTotal} item='{item.name}' player={player.NickName.Value}");
+
+        // 総数未確定なら再計測
+        if (!hasValidTotal || totalItemsInScene <= 0)
+        {
+            Debug.LogWarning($"ItemManager: totalItemsInScene invalid ({totalItemsInScene}) -> recounting before processing pickup");
+            CountExistingItems();
+        }
+
+        // アイテムを非アクティブ化
         item.DeactivateItem();
-        
-        // アイテム収集数を増加
-        itemsCollected++;
-        
-        // UI更新イベントを発火
+
+        // 総数 >0 の場合のみカウントアップ
+        if (totalItemsInScene > 0)
+        {
+            itemsCollected++;
+        }
+
         OnItemCountChanged?.Invoke(itemsCollected, totalItemsInScene);
-        
         Debug.Log($"ItemManager: Items collected: {itemsCollected}/{totalItemsInScene}");
-        
-        // 全アイテム収集チェック
-        if (itemsCollected >= totalItemsInScene)
+
+        if (totalItemsInScene > 0 && itemsCollected >= totalItemsInScene)
         {
             Debug.Log("ItemManager: All items collected!");
             OnAllItemsCollected?.Invoke();
         }
+        Debug.Log($"ItemManager: HandleItemCaught end total={totalItemsInScene} collected={itemsCollected}");
     }
     
     /// <summary>
@@ -110,10 +151,10 @@ public class ItemManager : MonoBehaviour
         cachedItems.Clear();
         cachedItems.AddRange(sceneItems);
         
-        totalItemsInScene = cachedItems.Count;
-        itemsCollected = 0; // リセット
-        
-        Debug.Log($"ItemManager: Found {totalItemsInScene} items in scene");
+    totalItemsInScene = cachedItems.Count;
+    itemsCollected = 0; // リセット
+    hasValidTotal = totalItemsInScene > 0;
+    Debug.Log($"ItemManager: Found {totalItemsInScene} items in scene (instanceID={GetInstanceID()})");
         
         // 既存アイテムにイベントを登録
         foreach (var item in cachedItems)
@@ -138,12 +179,14 @@ public class ItemManager : MonoBehaviour
     /// </summary>
     public void RegisterPlayer(PlayerAvatar player)
     {
-        // プレイヤーのItemCatcherに登録
-        ItemCatcher catcher = player.GetComponent<ItemCatcher>();
+        if (player == null) return;
+        // プレイヤーのItemCatcherに登録 (重複防止のため一旦解除後追加)
+        var catcher = player.GetComponent<ItemCatcher>();
         if (catcher != null)
         {
+            catcher.OnItemCaught -= HandleItemCaught;
             catcher.OnItemCaught += HandleItemCaught;
-            Debug.Log($"ItemManager: Player {player.playerId} registered");
+            Debug.Log($"ItemManager: Player {player.playerId} registered via PlayerManager event");
         }
     }
     
@@ -226,6 +269,10 @@ public class ItemManager : MonoBehaviour
     /// </summary>
     public void ResetAllItemsViaRPC()
     {
+        // 追加シーンロード後に出現したアイテムが cachedItems に含まれないケースへの対処として、
+        // リセット前に最新のアイテム一覧へ更新する（inactive も含む）。
+        RebuildCachedItems();
+
         // 権限外クライアントが Networked 値を書き換えると再同期で上書きされ欠落が発生する恐れがあるため
         // StateAuthority を持つアイテムのみ ResetItem() を呼び出し RPC_ActivateItem を経由して全クライアント更新する。
         itemsCollected = 0;
@@ -247,11 +294,66 @@ public class ItemManager : MonoBehaviour
         }
         OnItemCountChanged?.Invoke(itemsCollected, totalItemsInScene);
         Debug.Log($"ItemManager: ResetAllItemsViaRPC authoritativeResets={authoritativeResets} skipped(non-authority)={skipped} totalCached={cachedItems.Count}");
+
+    // ネットワークレプリケーションによる OnChangedRender が遅延した場合に備え、
+    // 次フレームで GameObject.activeSelf と IsItemActive の整合性を保証するフォールバックを実施。
+    StartCoroutine(ReactivateItemsNextFrame());
+    }
+
+    /// <summary>
+    /// 既存 CountExistingItems のロジックから UI への即時イベント送出を除いたキャッシュ再構築専用ヘルパー。
+    /// 再開時などリセット処理の直前に最新シーン状態を反映するために使用。
+    /// </summary>
+    private void RebuildCachedItems()
+    {
+        var allItems = Resources.FindObjectsOfTypeAll<Item>();
+        var sceneItems = new List<Item>();
+        foreach (var item in allItems)
+        {
+            if (item.gameObject.scene.isLoaded && item.gameObject.hideFlags == HideFlags.None)
+            {
+                sceneItems.Add(item);
+            }
+        }
+        cachedItems.Clear();
+        cachedItems.AddRange(sceneItems);
+        totalItemsInScene = cachedItems.Count;
+        Debug.Log($"ItemManager: RebuildCachedItems refreshed list count={cachedItems.Count}");
+    }
+
+    /// <summary>
+    /// 次フレームで Active フラグと GameObject 状態の不整合を補正するフォールバック。
+    /// </summary>
+    private IEnumerator ReactivateItemsNextFrame()
+    {
+        yield return null; // 1フレーム待機（Networkedプロパティ反映待ち）
+        int reactivated = 0;
+        var allItems = Resources.FindObjectsOfTypeAll<Item>();
+        foreach (var item in allItems)
+        {
+            if (item == null) continue;
+            if (!item.gameObject.scene.isLoaded || item.gameObject.hideFlags != HideFlags.None) continue;
+            if (item.IsItemActive && !item.gameObject.activeSelf)
+            {
+                item.gameObject.SetActive(true);
+                reactivated++;
+            }
+        }
+        if (reactivated > 0)
+        {
+            Debug.Log($"ItemManager: ReactivateItemsNextFrame reactivated={reactivated}");
+        }
     }
     
     void OnDestroy()
     {
         // イベント購読解除
         GameEvents.OnItemsReset -= ResetAllItemsViaRPC;
+        ServiceRegistry.OnAnyRegistered -= HandleServiceRegistered;
+        var pm = ServiceRegistry.GetOrNull<PlayerManager>();
+        if (pm != null)
+        {
+            pm.OnPlayerRegistered -= RegisterPlayer;
+        }
     }
 }

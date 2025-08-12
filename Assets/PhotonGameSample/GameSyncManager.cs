@@ -89,6 +89,17 @@ public class GameSyncManager : NetworkBehaviour
             RPC_NotifyGameRestart();
         }
     }
+
+    /// <summary>
+    /// ハードリセットを全クライアントに通知（Runner 全面再初期化用）
+    /// </summary>
+    public void NotifyHardReset()
+    {
+        if (HasStateAuthority)
+        {
+            RPC_NotifyHardReset();
+        }
+    }
     
     /// <summary>
     /// アイテムリセット通知を全クライアントに同期
@@ -171,6 +182,15 @@ public class GameSyncManager : NetworkBehaviour
     private void RPC_NotifyGameRestart()
     {
         GameEvents.TriggerGameRestartExecution();
+    }
+
+    /// <summary>
+    /// RPC: ハードリセット要求を全クライアントへ送信
+    /// </summary>
+    [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+    private void RPC_NotifyHardReset()
+    {
+        GameEvents.TriggerHardResetRequested();
     }
     
     /// <summary>

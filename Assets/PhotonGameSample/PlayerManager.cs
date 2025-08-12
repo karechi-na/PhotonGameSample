@@ -15,6 +15,9 @@ public class PlayerManager : MonoBehaviour
 
     // プレイヤー管理
     private Dictionary<int, PlayerAvatar> allPlayerAvatars = new Dictionary<int, PlayerAvatar>();
+    private List<PlayerAvatar> pendingIdResolution = new List<PlayerAvatar>(); // playerId<=0 再試行用
+    private Dictionary<int, int> nullAvatarStreaks = new Dictionary<int, int>(); // 連続 null 検出回数
+    private const int NULL_PRUNE_THRESHOLD = 2; // 2回連続で null なら pruning
 
     // イベント定義
     public event Action<PlayerAvatar> OnPlayerRegistered; // プレイヤー登録時
@@ -38,6 +41,60 @@ public class PlayerManager : MonoBehaviour
     }
 
     /// <summary>
+    /// シーン再ロード後などで辞書内に Destroy 済み(null) 参照が残るのを防ぐためのプルーニング処理。
+    /// </summary>
+    private bool PruneNullEntries()
+    {
+        bool pruned = false;
+        var keys = new List<int>(allPlayerAvatars.Keys);
+        foreach (var id in keys)
+        {
+            var val = allPlayerAvatars[id];
+            if (val == null)
+            {
+                nullAvatarStreaks.TryGetValue(id, out int streak);
+                streak++;
+                nullAvatarStreaks[id] = streak;
+                if (streak >= NULL_PRUNE_THRESHOLD)
+                {
+                    Debug.LogWarning($"PlayerManager: Pruning null avatar entry playerId={id} after {streak} consecutive detections");
+                    allPlayerAvatars.Remove(id);
+                    nullAvatarStreaks.Remove(id);
+                    pruned = true;
+                }
+            }
+            else
+            {
+                if (nullAvatarStreaks.ContainsKey(id)) nullAvatarStreaks.Remove(id); // 回復
+            }
+        }
+        if (pruned)
+        {
+            OnPlayerCountChanged?.Invoke(allPlayerAvatars.Count);
+        }
+        return pruned;
+    }
+
+    /// <summary>
+    /// 実際にシーン上に存在する PlayerAvatar から辞書を再構築（フルリロード後の再同期用）
+    /// </summary>
+    public void RebuildFromSceneAvatars()
+    {
+        Debug.Log("PlayerManager: RebuildFromSceneAvatars start");
+        allPlayerAvatars.Clear();
+        var avatars = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
+        foreach (var av in avatars)
+        {
+            if (av != null && av.playerId > 0)
+            {
+                Debug.Log($"PlayerManager: Rebuild registering playerId={av.playerId} instanceID={av.GetInstanceID()}");
+                RegisterPlayerAvatar(av);
+            }
+        }
+        Debug.Log($"PlayerManager: RebuildFromSceneAvatars end count={allPlayerAvatars.Count}");
+    }
+
+    /// <summary>
     /// 定期的にプレイヤーの登録状況をチェックし、未登録のプレイヤーを登録
     /// これにより、ネットワークの遅延や同期の問題を回避
     /// </summary>
@@ -54,7 +111,7 @@ public class PlayerManager : MonoBehaviour
             yield return new WaitForSeconds(1.5f); // 少し間隔を延ばす
             checkCount++;
 
-            Debug.Log($"PlayerManager: ContinuousPlayerCheck #{checkCount} - Current registered players: {allPlayerAvatars.Count}");
+            //Debug.Log($"PlayerManager: ContinuousPlayerCheck #{checkCount} - Current registered players: {allPlayerAvatars.Count}");
             
             // 現在登録されているプレイヤーの詳細を表示
             if (allPlayerAvatars.Count > 0)
@@ -118,6 +175,11 @@ public class PlayerManager : MonoBehaviour
                             {
                                 Debug.LogWarning($"PlayerManager: Avatar has empty NickName, this might be an old/invalid spawn");
                             }
+                            if (!pendingIdResolution.Contains(avatar))
+                            {
+                                pendingIdResolution.Add(avatar);
+                                Debug.Log($"PlayerManager: Added avatar InstanceID={avatar.GetInstanceID()} to pendingIdResolution list");
+                            }
                             continue;
                         }
                         
@@ -147,10 +209,36 @@ public class PlayerManager : MonoBehaviour
                     Debug.LogWarning("PlayerManager: Found null avatar in scene");
                 }
             }
+
+            // シーンロード後に破棄されたが辞書に残っている参照を除去
+            if (PruneNullEntries())
+            {
+                Debug.Log("PlayerManager: Null avatar entries pruned");
+            }
+
+            // playerId が後から確定したものを再試行
+            if (pendingIdResolution.Count > 0)
+            {
+                for (int i = pendingIdResolution.Count - 1; i >= 0; i--)
+                {
+                    var av = pendingIdResolution[i];
+                    if (av == null)
+                    {
+                        pendingIdResolution.RemoveAt(i);
+                        continue;
+                    }
+                    if (av.playerId > 0 && !allPlayerAvatars.ContainsKey(av.playerId))
+                    {
+                        Debug.Log($"PlayerManager: Retrying registration for resolved avatar playerId={av.playerId}");
+                        RegisterPlayerAvatar(av);
+                        pendingIdResolution.RemoveAt(i);
+                    }
+                }
+            }
             
             if (!foundNewPlayer)
             {
-                Debug.Log($"PlayerManager: No new players found in check #{checkCount}");
+                // Debug.Log($"PlayerManager: No new players found in check #{checkCount}");
             }
         }
     }
@@ -165,6 +253,13 @@ public class PlayerManager : MonoBehaviour
         if (avatar == null)
         {
             Debug.LogError("PlayerManager: RegisterPlayerAvatar called with null avatar!");
+            return;
+        }
+
+        // Destroy 済み (UnityEngine.Object の == 演算子) を早期弾き
+        if (avatar.Equals(null))
+        {
+            Debug.LogWarning("PlayerManager: Provided avatar reference is destroyed/invalid");
             return;
         }
         
@@ -394,5 +489,47 @@ public class PlayerManager : MonoBehaviour
         }
         
         Debug.Log($"PlayerManager: Position reset complete for {allPlayerAvatars.Count} players");
+    }
+
+    /// <summary>
+    /// 安定IDに基づいてプレイヤーを正規スポーン座標へスナップ（NetworkGameManager の spawnPositions を参照）。
+    /// 遅延スポーン後や他コンポーネントによる位置ズレを補正する用途。
+    /// </summary>
+    public void NormalizePlayerPositions()
+    {
+        var ngm = PhotonGameSample.Infrastructure.ServiceRegistry.GetOrNull<NetworkGameManager>();
+        if (ngm == null)
+        {
+            Debug.LogWarning("PlayerManager: NormalizePlayerPositions skipped (NetworkGameManager not found)");
+            return;
+        }
+        var spField = typeof(NetworkGameManager).GetField("spawnPositions", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        if (spField == null)
+        {
+            Debug.LogWarning("PlayerManager: spawnPositions field reflection failed");
+            return;
+        }
+        var arr = spField.GetValue(ngm) as UnityEngine.Vector3[];
+        if (arr == null || arr.Length == 0)
+        {
+            Debug.LogWarning("PlayerManager: spawnPositions array empty");
+            return;
+        }
+        foreach (var kv in allPlayerAvatars)
+        {
+            var av = kv.Value;
+            if (av == null) continue;
+            int pid = kv.Key;
+            int idx = Mathf.Clamp(pid - 1, 0, arr.Length - 1);
+            var target = arr[idx];
+            // 高さは現在の y を維持（地面差異考慮）
+            var current = av.transform.position;
+            var desired = new Vector3(target.x, current.y, target.z);
+            if ((current - desired).sqrMagnitude > 0.01f && av.HasStateAuthority)
+            {
+                av.transform.position = desired;
+                Debug.Log($"PlayerManager: Normalized Player{pid} position -> {desired}");
+            }
+        }
     }
 }

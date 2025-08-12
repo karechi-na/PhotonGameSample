@@ -159,6 +159,7 @@ public class GameController : MonoBehaviour
         GameEvents.OnPlayerClickedForRestart += OnPlayerClickedForRestart;
         GameEvents.OnPlayerInputStateChanged += OnPlayerInputStateChanged;
         GameEvents.OnGameStateChanged += OnGameStateChangedFromRPC;
+    GameEvents.OnItemsSceneReloaded += OnItemsSceneReloaded;
         
         Debug.Log("GameController: Initialized and events subscribed");
     }
@@ -238,8 +239,18 @@ public class GameController : MonoBehaviour
         CurrentGameState = GameState.GameOver;
         Debug.Log("GameController: Game ended");
 
-        // 全プレイヤーの入力を無効化
+        // 全プレイヤーの入力を無効化（ローカル）
         EnableAllPlayersInput(false);
+        // 全クライアントにも入力無効を同期（勝者発表～再開待機中の誤操作防止）
+        if (gameSyncManager != null)
+        {
+            Debug.Log("GameController: Broadcasting input disable to all clients");
+            gameSyncManager.NotifyEnableAllPlayersInput(false);
+        }
+        else
+        {
+            Debug.LogWarning("GameController: gameSyncManager is null - cannot broadcast input disable");
+        }
 
         // *** 重要：プレイヤークリック待機をリセット ***
         Debug.Log($"GameController: EndGame - Clearing player click list (was: [{string.Join(", ", playersClickedForRestart)}])");
@@ -310,36 +321,43 @@ public class GameController : MonoBehaviour
         }
         
         // アイテムマネージャーをリセット（RPC経由）
-        if (itemManager != null)
+        if (networkGameManager != null && networkGameManager.UseFullReloadRestart)
         {
-            // マスタークライアントがRPCでアイテムリセットを通知
-            if (networkGameManager != null && networkGameManager.IsMasterClient)
+            Debug.Log("GameController: FullReloadRestart mode active - skipping in-session item reset (scene reload will recreate items)");
+        }
+        else
+        {
+            if (itemManager != null)
             {
-                Debug.Log("GameController: Master client sending item reset RPC");
-                
-                // GameSyncManagerを使用してアイテムリセットを通知
-                if (gameSyncManager != null)
+                // マスタークライアントがRPCでアイテムリセットを通知
+                if (networkGameManager != null && networkGameManager.IsMasterClient)
                 {
-                    Debug.Log("GameController: Using GameSyncManager for item reset notification");
-                    gameSyncManager.NotifyItemsReset();
-                    Debug.Log("GameController: Item reset RPC sent via GameSyncManager");
+                    Debug.Log("GameController: Master client sending item reset RPC");
+                    
+                    // GameSyncManagerを使用してアイテムリセットを通知
+                    if (gameSyncManager != null)
+                    {
+                        Debug.Log("GameController: Using GameSyncManager for item reset notification");
+                        gameSyncManager.NotifyItemsReset();
+                        Debug.Log("GameController: Item reset RPC sent via GameSyncManager");
+                    }
+                    else
+                    {
+                        Debug.LogWarning("GameController: GameSyncManager not available - using local item reset");
+                        Debug.Log("GameController: Calling itemManager.ResetAllItemsViaRPC() as fallback");
+                        itemManager.ResetAllItemsViaRPC();
+                        Debug.Log("GameController: Local item reset completed");
+                    }
                 }
                 else
                 {
-                    Debug.LogWarning("GameController: GameSyncManager not available - using local item reset");
-                    Debug.Log("GameController: Calling itemManager.ResetAllItemsViaRPC() as fallback");
-                    itemManager.ResetAllItemsViaRPC();
-                    Debug.Log("GameController: Local item reset completed");
+                    Debug.Log("GameController: Not master client - waiting for item reset RPC");
                 }
             }
             else
             {
-                Debug.Log("GameController: Not master client - waiting for item reset RPC");
+                Debug.LogError("GameController: itemManager is null - cannot reset items");
             }
-        }
-        else
-        {
-            Debug.LogError("GameController: itemManager is null - cannot reset items");
         }
         
         // プレイヤーのスコアをリセット
@@ -374,6 +392,13 @@ public class GameController : MonoBehaviour
             Debug.Log($"GameController: IsMasterClient = {networkGameManager.IsMasterClient}");
             Debug.Log($"GameController: This client info - IsMasterClient: {networkGameManager.IsMasterClient}");
         }
+
+        // GameOver / WaitingForRestart 以外の状態では再スタートクリックを受け付けない
+        if (CurrentGameState != GameState.GameOver && CurrentGameState != GameState.WaitingForRestart)
+        {
+            Debug.LogWarning($"GameController: Restart click ignored because game state is {CurrentGameState} (only GameOver/WaitingForRestart allowed)");
+            return;
+        }
         
         // 既にクリック済みの場合は無視
         if (playersClickedForRestart.Contains(playerId))
@@ -404,15 +429,27 @@ public class GameController : MonoBehaviour
                 Debug.Log($"GameController: IsMasterClient = {networkGameManager.IsMasterClient}");
             }
             
-            // マスタークライアントのみが再開処理を実行
+            // マスタークライアントのみがハードリセットを実行
             if (networkGameManager != null && networkGameManager.IsMasterClient)
             {
-                Debug.Log("GameController: *** THIS IS MASTER CLIENT - CALLING RestartGame() ***");
-                RestartGame();
+                Debug.Log("GameController: *** MASTER CLIENT - BROADCAST HARD RESET RPC ***");
+                if (gameSyncManager == null)
+                {
+                    gameSyncManager = FindFirstObjectByType<GameSyncManager>();
+                }
+                if (gameSyncManager != null)
+                {
+                    gameSyncManager.NotifyHardReset();
+                }
+                else
+                {
+                    Debug.LogWarning("GameController: GameSyncManager not found - fallback to direct hard reset");
+                    networkGameManager.RequestHardReset();
+                }
             }
             else
             {
-                Debug.Log("GameController: *** THIS IS NOT MASTER CLIENT - WAITING FOR RPC ***");
+                Debug.Log("GameController: *** NON-MASTER - AWAITING HARD RESET RPC ***");
             }
         }
         else
@@ -767,6 +804,14 @@ public class GameController : MonoBehaviour
                 Debug.Log("Game Over!");
                 // 勝者決定はEndGame()で既に実行済み
                 break;
+            case GameState.WaitingForRestart:
+                // 再開待機中は操作不可を維持
+                EnableAllPlayersInput(false);
+                if (gameSyncManager != null)
+                {
+                    gameSyncManager.NotifyEnableAllPlayersInput(false);
+                }
+                break;
         }
     }
 
@@ -835,5 +880,28 @@ public class GameController : MonoBehaviour
         GameEvents.OnPlayerClickedForRestart -= OnPlayerClickedForRestart;
         GameEvents.OnPlayerInputStateChanged -= OnPlayerInputStateChanged;
         GameEvents.OnGameStateChanged -= OnGameStateChangedFromRPC;
+        GameEvents.OnItemsSceneReloaded -= OnItemsSceneReloaded;
+    }
+
+    // シーン再ロード完了通知（Scene Reload Restart モード用）
+    private void OnItemsSceneReloaded()
+    {
+        Debug.Log("GameController: OnItemsSceneReloaded received");
+        // ItemManager が再生成されていれば参照更新
+        if (itemManager == null)
+        {
+            itemManager = FindFirstObjectByType<ItemManager>();
+        }
+        if (itemManager != null)
+        {
+            Debug.Log("GameController: ItemManager reference refreshed after scene reload");
+        }
+        // 状態を WaitingForPlayers に戻し、プレイヤー数チェックを再走（十分ならカウントダウンへ）
+        CurrentGameState = GameState.WaitingForPlayers;
+        if (networkGameManager != null && networkGameManager.NetworkRunner != null)
+        {
+            // 既に十分なプレイヤーがいる場合は CheckPlayerCountAndUpdateGameState 経由でカウントダウン
+            CheckPlayerCountAndUpdateGameState(networkGameManager.NetworkRunner);
+        }
     }
 }

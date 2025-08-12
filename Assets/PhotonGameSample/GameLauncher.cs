@@ -59,6 +59,18 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
     void INetworkRunnerCallbacks.OnHostMigration(NetworkRunner runner, HostMigrationToken hostMigrationToken) { }
     void INetworkRunnerCallbacks.OnReliableDataReceived(NetworkRunner runner, PlayerRef player, ReliableKey key, ArraySegment<byte> data) { }
     void INetworkRunnerCallbacks.OnReliableDataProgress(NetworkRunner runner, PlayerRef player, ReliableKey key, float progress) { }
-    void INetworkRunnerCallbacks.OnSceneLoadDone(NetworkRunner runner) { }
-    void INetworkRunnerCallbacks.OnSceneLoadStart(NetworkRunner runner) { }
+    // Fusion シーンロード完了時
+    void INetworkRunnerCallbacks.OnSceneLoadDone(NetworkRunner runner)
+    {
+        Debug.Log("GameLauncher: OnSceneLoadDone");
+        var ngm = FindFirstObjectByType<NetworkGameManager>();
+        if (ngm != null)
+        {
+            ngm.OnRunnerSceneLoadDone(runner);
+        }
+    }
+    void INetworkRunnerCallbacks.OnSceneLoadStart(NetworkRunner runner)
+    {
+        Debug.Log("GameLauncher: OnSceneLoadStart");
+    }
 }

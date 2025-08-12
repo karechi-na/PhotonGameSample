@@ -938,8 +938,6 @@ MonoBehaviour:
   itemManager: {fileID: 1092109761}
   networkGameManager: {fileID: 1092109762}
   playerManager: {fileID: 1092109763}
-  gameUIManager: {fileID: 1092109764}
-  gameRuleProcessor: {fileID: 1092109765}
 --- !u!4 &1092109760
 Transform:
   m_ObjectHideFlags: 0
@@ -985,6 +983,11 @@ MonoBehaviour:
   spawnPositions:
   - {x: -5, y: 2, z: 0}
   - {x: 5, y: 2, z: 0}
+  itemsSceneName: ItemsScene
+  itemsSceneBuildIndex: 1
+  useSceneReloadRestart: 1
+  useFullReloadRestart: 1
+  bootstrapSceneName: PhotonGameSample
 --- !u!114 &1092109763
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1316,7 +1319,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 2147483647
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1747787101
 RectTransform:
   m_ObjectHideFlags: 0

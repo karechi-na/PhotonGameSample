@@ -47,5 +47,14 @@ namespace PhotonGameSample.Infrastructure
             TryGet<T>(out var v);
             return v;
         }
+
+        /// <summary>
+        /// 全サービス登録をクリア（ハードリセット用）。
+        /// </summary>
+        public static void Clear()
+        {
+            _map.Clear();
+            Debug.Log("[ServiceRegistry] Cleared all registrations");
+        }
     }
 }

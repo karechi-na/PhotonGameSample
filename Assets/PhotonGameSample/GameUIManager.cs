@@ -16,7 +16,7 @@ public class GameUIManager : MonoBehaviour
     // 参照（フォールバック用）
     private NetworkGameManager networkGameManager;
     private GameSyncManager gameSyncManager;
-    private PlayerManager playerManager;
+    private PlayerManager playerManager; // ServiceRegistry 経由取得優先
     private bool winnerMessageDisplayed = false; // 勝者メッセージが表示されているかのフラグ
     private bool isWaitingForRestart = false; // 再開待ち状態のフラグ
     private bool hasClickedForRestart = false; // 自分がクリックしたかのフラグ
@@ -30,10 +30,13 @@ public class GameUIManager : MonoBehaviour
         InitializePlayerScoreTexts();
         ServiceRegistry.Register<GameUIManager>(this); // フェーズ1登録
 
-    // 参照の取得（存在すれば）
-    networkGameManager = FindFirstObjectByType<NetworkGameManager>();
-    playerManager = FindFirstObjectByType<PlayerManager>();
-    gameSyncManager = FindFirstObjectByType<GameSyncManager>();
+    // 参照の取得（ServiceRegistry 優先 / 無ければフォールバック）
+    playerManager = ServiceRegistry.GetOrNull<PlayerManager>() ?? FindFirstObjectByType<PlayerManager>();
+    networkGameManager = ServiceRegistry.GetOrNull<NetworkGameManager>() ?? FindFirstObjectByType<NetworkGameManager>();
+    gameSyncManager = ServiceRegistry.GetOrNull<GameSyncManager>() ?? FindFirstObjectByType<GameSyncManager>();
+
+    // 遅延登録対応
+    ServiceRegistry.OnAnyRegistered += HandleServiceRegistered;
 
         // GameSyncManager のスポーン通知を受けて参照を更新
         if (networkGameManager != null)
@@ -308,53 +311,42 @@ public class GameUIManager : MonoBehaviour
     // ローカルプレイヤーのIDを取得
     private int GetLocalPlayerId()
     {
-        // InputAuthorityを持つPlayerAvatarを探す（StateAuthorityではなく）
-        PlayerAvatar[] allPlayers = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
-        
-        Debug.Log($"GameUIManager: Found {allPlayers.Length} players in scene");
-        
-        foreach (var player in allPlayers)
-        {
-            if (player != null)
-            {
-                Debug.Log($"GameUIManager: Player {player.playerId} - HasInputAuthority: {player.HasInputAuthority}, HasStateAuthority: {player.HasStateAuthority}");
-                // InputAuthorityを持つプレイヤーがローカルプレイヤー
-                if (player.HasInputAuthority)
-                {
-                    Debug.Log($"GameUIManager: Local player found via InputAuthority - ID: {player.playerId}");
-                    return player.playerId;
-                }
-            }
-        }
-        
-        // フォールバック1: NetworkRunnerのLocalPlayerIdを使用
-        if (networkGameManager != null && networkGameManager.NetworkRunner != null)
-        {
-            var runner = networkGameManager.NetworkRunner;
-            int localId = runner.LocalPlayer.PlayerId;
-            if (localId > 0)
-            {
-                Debug.Log($"GameUIManager: Fallback via NetworkRunner.LocalPlayer -> ID {localId}");
-                return localId;
-            }
-        }
-
-        // フォールバック2: PlayerManagerの登録から、HasInputAuthorityのものを探す
+        // PlayerManager を優先
         if (playerManager != null)
         {
             foreach (var kv in playerManager.AllPlayers)
             {
-                var avatar = kv.Value;
-                if (avatar != null && avatar.HasInputAuthority)
+                var av = kv.Value;
+                if (av != null && av.HasInputAuthority)
                 {
-                    Debug.Log($"GameUIManager: Fallback via PlayerManager.AllPlayers -> ID {avatar.playerId}");
-                    return avatar.playerId;
+                    Debug.Log($"GameUIManager: Local player via PlayerManager -> {av.playerId}");
+                    return av.playerId;
                 }
             }
         }
 
-        // それでも見つからない場合は-1
-        Debug.LogError("GameUIManager: No local player with InputAuthority found!");
+        // シーン探索はフォールバック (将来的に削除予定)
+        PlayerAvatar[] allPlayers = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
+        foreach (var p in allPlayers)
+        {
+            if (p != null && p.HasInputAuthority)
+            {
+                Debug.Log($"GameUIManager: Local player via scene scan -> {p.playerId}");
+                return p.playerId;
+            }
+        }
+
+        if (networkGameManager != null && networkGameManager.NetworkRunner != null)
+        {
+            int rid = networkGameManager.NetworkRunner.LocalPlayer.PlayerId;
+            if (rid > 0)
+            {
+                Debug.Log($"GameUIManager: Local player via NetworkRunner -> {rid}");
+                return rid;
+            }
+        }
+
+        Debug.LogError("GameUIManager: Local player id not resolved");
         return -1;
     }
 
@@ -377,30 +369,37 @@ public class GameUIManager : MonoBehaviour
     // ローカルプレイヤーのPlayerAvatarを取得
     private PlayerAvatar GetLocalPlayerAvatar()
     {
-        // まずシーン上から検索
-        PlayerAvatar[] allPlayers = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
-        foreach (var player in allPlayers)
-        {
-            if (player != null && player.HasInputAuthority)
-            {
-                return player;
-            }
-        }
-
-        // フォールバック: PlayerManagerの登録から検索
         if (playerManager != null)
         {
             foreach (var kv in playerManager.AllPlayers)
             {
-                var avatar = kv.Value;
-                if (avatar != null && avatar.HasInputAuthority)
-                {
-                    return avatar;
-                }
+                var av = kv.Value;
+                if (av != null && av.HasInputAuthority) return av;
             }
         }
-
+        // フォールバック
+        var scan = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
+        foreach (var av in scan)
+        {
+            if (av != null && av.HasInputAuthority) return av;
+        }
         return null;
+    }
+
+    private void HandleServiceRegistered(System.Type type, object inst)
+    {
+        if (type == typeof(PlayerManager) && playerManager == null)
+        {
+            playerManager = (PlayerManager)inst;
+        }
+        else if (type == typeof(GameSyncManager) && gameSyncManager == null)
+        {
+            gameSyncManager = (GameSyncManager)inst;
+        }
+        else if (type == typeof(NetworkGameManager) && networkGameManager == null)
+        {
+            networkGameManager = (NetworkGameManager)inst;
+        }
     }
     
     // 勝者メッセージフラグをリセット（ゲーム再開時に使用）
@@ -423,5 +422,6 @@ public class GameUIManager : MonoBehaviour
         GameEvents.OnPlayerCountChanged -= UpdateWaitingStatus;
         GameEvents.OnPlayerRegistered -= CreatePlayerScoreUI;
         GameEvents.OnCountdownUpdate -= DisplayCountdown;
+    ServiceRegistry.OnAnyRegistered -= HandleServiceRegistered;
     }
 }
