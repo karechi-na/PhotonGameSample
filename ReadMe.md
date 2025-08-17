@@ -1,3 +1,138 @@
+
+# PhotonGameSample プロジェクト概要 (2025-08 更新版)
+
+Unity + Photon Fusion (Shared Mode) による 2 プレイヤー用サンプル。最新版では以下を含む:
+- ハードリセット (全クライアント Runner Shutdown + bootstrap 再ロード)
+- 安定 PlayerID (1/2) 強制マッピングと余剰 Join ガード
+- ItemsScene 遅延再カウント (sceneLoaded コールバック)
+- InGame 中 Restart クリック無視
+- Duplicate Avatar 防止 / PlayerManager 辞書補完
+
+> 最終更新: 2025-08
+
+## 📚 目次 (簡略)
+- 再スタート(ハードリセット) フロー概要
+- 主なスクリプト強化点
+- トラブルシュート早見表
+- 既存アーキテクチャ解説 (原文抜粋)
+
+---
+<!-- 最新更新概要セクションは要求により削除されました -->
+## 再スタート (Hard Reset) フロー概要
+1. GameOver 後 両プレイヤーが再スタートクリック
+2. GameSyncManager が HardReset RPC を全クライアントへ
+3. 各クライアント: HardResetRoutine
+   - (猶予) 1frame + 0.1s
+   - 全 NetworkObject Despawn (authority 判定)
+   - NetworkRunner.Shutdown()
+   - ServiceRegistry.Clear & GameEvents.ClearAllHandlers()
+   - bootstrap シーン Single Load
+4. 新しい GameLauncher が Runner.StartGame()
+5. マスター: ItemsScene (Additive) Load → sceneLoaded で ItemManager.CountExistingItems()
+6. 安定 PlayerID=1/2 で再スポーン → Countdown → InGame
+
+---
+## 主なスクリプト強化点 (2025-08)
+### NetworkGameManager
+- HardResetRoutine: 全クライアントローカル実行
+- ItemsScene 再カウント: OnRunnerSceneLoadDone + sceneLoaded 二段階
+- assignedPlayerIds (PlayerRef→stableId 1/2) + 余剰 Join return
+- Duplicate spawn 防止 (stableId 基準)
+
+### GameController
+- Restart クリック受付を GameOver/WaitingForRestart のみ許可
+- 条件成立で GameSyncManager.NotifyHardReset 経由
+
+### GameSyncManager
+- HardReset RPC をトリガ (StateAuthority 発火)
+- 進行同期: Countdown / GameState / EnableInput / ItemsReset
+
+### ItemManager
+- sceneLoaded で最終 CountExistingItems (Additive load 遅延対応)
+- ResetAllItemsViaRPC: authority のみ Reset → 次フレーム再活性補正
+
+---
+## トラブルシュート早見表
+| 症状 | 主因 | 確認ログ | 対応 |
+|------|------|----------|------|
+| Player1 消失 / Player2 残留 | 片側のみ HardReset | HardResetRoutine start/complete | 全クライアント実行仕様確認 |
+| アイテム 0/0 復活しない | ItemsScene 未ロード時に Count | OnSceneLoadedCallback | 次回 HardReset / ログで再カウント確認 |
+| Player3 出現 | 余剰 Join / Ghost | Rejecting/ignoring additional join | 将来: authority Disconnect 実装予定 |
+| Duplicate Avatar | stableId 競合 | Duplicate spawn prevented | HardReset / 再接続待ち |
+
+---
+## ServiceRegistry (依存解決レイヤ / フェーズ1)
+ゲーム内で相互参照が必要なマネージャ同士を「起動順や Find 系 API に依存せず」疎結合に接続するための軽量 DI (Service Locator) です。`[DefaultExecutionOrder(-800)]` により極めて早期に使用可能となり、ハードリセット時には `ServiceRegistry.Clear()` で完全初期化されます。
+
+### 目的
+- 起動順非決定 / 遅延スポーン(NetworkBehaviour) を安全に扱う
+- `FindObjectsByType / Resources.FindObjectsOfTypeAll / GameObject.Find*` の常時ポーリング削減
+- Hard Reset 後の古い参照残り (スタティック変数) を一括クリア
+
+### 提供 API
+```
+ServiceRegistry.Register<T>(instance);
+bool ServiceRegistry.TryGet<T>(out T value);
+T ServiceRegistry.GetOrNull<T>();
+ServiceRegistry.Clear();               // Hard Reset 中に呼び出し
+event Action<Type, object> OnAnyRegistered; // 遅延解決用フック
+```
+
+### 代表的な使用パターン
+1. 早期登録 (Awake / Start):
+```
+void Awake(){ ServiceRegistry.Register<PlayerManager>(this); }
+```
+2. 遅延取得 (存在すれば即使用 / 無ければ待機):
+```
+var pm = ServiceRegistry.GetOrNull<PlayerManager>();
+if (pm == null) {
+  ServiceRegistry.OnAnyRegistered += HandleRegistered;
+}
+void HandleRegistered(Type t, object inst){
+  if (t == typeof(PlayerManager)) { /* attach and then */ ServiceRegistry.OnAnyRegistered -= HandleRegistered; }
+}
+```
+3. Hard Reset 後再構築フロー:
+```
+// HardResetRoutine 内
+ServiceRegistry.Clear();
+// Bootstrap シーン再ロード→各 Awake/Start で再 Register
+```
+
+### イベント化による置き換え事例 (2025-08 適用 A)
+| 旧 (Before) | 新 (After) | 効果 |
+|-------------|-----------|------|
+| ItemManager.Start() で `FindObjectsByType<PlayerAvatar>` を即時列挙 | PlayerManager 登録後に `OnPlayerRegistered` 経由で ItemCatcher を購読 | 起動タイミング競合と重複ハンドラ低減 |
+| GameUIManager のローカルプレイヤー検出で都度 `FindObjectsByType<PlayerAvatar>` | PlayerManager.AllPlayers 優先 + Find はフォールバック | パフォーマンス / 安定性向上 |
+
+### 設計方針
+- ServiceRegistry は「インスタンスを保持のみ」: 生成責務は各コンポーネント
+- OnAnyRegistered は軽量通知。重い初期化や再帰的 Register 呼び出しは避ける
+- 取得が一度成功したらリスナーを必ず解除 (リーク防止)
+- ネットワークオブジェクト (動的多数) には乱用しない (プレイヤー / ゲーム進行系の中核マネージャ限定)
+
+### Hard Reset と整合性
+Hard Reset では Runner.Shutdown → ServiceRegistry.Clear → GameEvents.ClearAllHandlers の順で副作用を除去。再ロードされた bootstrap シーンの Awake/Start で再登録が行われるため、古い参照 (Destroy 済みオブジェクト) が混入しません。
+
+### Anti-Pattern (避けるべき)
+| パターン | 問題 | 推奨代替 |
+|----------|------|-----------|
+| 毎フレーム TryGet ループ | 不要 CPU / GC | 一度取得→保持 / 遅延時はイベント待機 |
+| Register 前提の強制 Null チェック無し使用 | Hard Reset レースで NRE | TryGet + フェールセーフログ |
+| OnAnyRegistered 内で更に Register 連鎖 | 予期しない再入 / 順序難読化 | 責務分離し外側で組み立て |
+
+### 今後の拡張余地
+- Debug UI: 現在登録中サービス一覧ダンプ
+- オプション: 競合登録 (複数) を許可するタグ付き拡張 (key=Type+string)
+- プロファイル計測: Register / Resolve タイムスタンプ記録
+
+---
+## 既存アーキテクチャ (原文抜粋 + 差分)
+下記以降は元 README の詳細解説 (イベント / 各クラス責務 / 拡張ガイド) を維持。更新差分は上部セクションを参照。
+
+---
+
 # PhotonGameSample プロジェクト概要
 
 このプロジェクトは、UnityとPhoton Fusionを使用して構築されたマルチプレイヤーゲームのサンプルです。ゲームの基本的な流れ、主要なスクリプトの役割、およびイベントシステムについて解説します。
@@ -73,6 +208,31 @@
 *   `OnGameEnd`: ゲームが終了した時。
 *   `OnScoreUpdateCompleted`: スコアの更新が完了した時。
 *   `OnCountdownUpdate`: ゲーム開始カウントダウンの更新時。
+
+### 3.1 発火元と主な購読先一覧
+| イベント | 発火メソッド / 典型的発火元 | 主な購読先 (代表) | 用途 / 備考 |
+|----------|------------------------------|------------------|-------------|
+| OnGameStateChanged | GameEvents.TriggerGameStateChanged() ← GameController / GameSyncManager | GameUIManager, PlayerManager(入力制御), ItemManager(必要に応じ) | 状態遷移通知 (Waiting→Countdown→InGame→GameOver) |
+| OnPlayerScoreChanged | TriggerPlayerScoreChanged() ← PlayerAvatar / GameController | GameUIManager (スコアUI), GameRuleProcessor(終了条件判定) | スコアUI更新 / 終了判定補助 |
+| OnWinnerDetermined | TriggerWinnerDetermined() ← GameRuleProcessor | GameUIManager (勝者表示), GameController(後続遷移) | 勝者表示と再開準備 |
+| OnPlayerCountChanged | TriggerPlayerCountChanged() ← PlayerManager | GameController(開始条件), GameUIManager(表示) | 参加人数ステータス更新 |
+| OnPlayerRegistered | TriggerPlayerRegistered() ← PlayerManager.RegisterPlayerAvatar | GameUIManager(UI生成), ItemManager(キャッチャ購読) | 新規プレイヤー初期化 |
+| OnGameEnd | TriggerGameEnd() ← GameController.EndGame | GameUIManager, GameSyncManager(再開同期) | 終了フロー開始 |
+| OnScoreUpdateCompleted | TriggerScoreUpdateCompleted() ← PlayerAvatar.Score変化後 | GameRuleProcessor(勝者決定待ち) | スコア反映完了合図 |
+| OnCountdownUpdate | TriggerCountdownUpdate() ← GameSyncManager (RPC) | GameUIManager(カウント表示) | 開始カウントダウン同期 |
+| OnGameRestartRequested | TriggerGameRestartRequested() ← UI/外部呼び出し | GameSyncManager(集約), GameController | 再開意図表明 (旧ロジック) |
+| OnGameRestartExecution | TriggerGameRestartExecution() ← GameSyncManager | GameController(Reset手順), ItemManager | 旧ソフトリセット実行通知 (Hard Reset 後は限定使用) |
+| OnPlayerClickedForRestart | TriggerPlayerClickedForRestart() ← GameUIManager / PlayerAvatar RPC | GameController(両者クリック集計) | Hard Reset 前提のクリック集約 |
+| OnPlayerInputStateChanged | TriggerPlayerInputStateChanged() ← GameController / GameSyncManager | PlayerManager / 各 Avatar | 入力有効/無効制御 |
+| OnItemsReset | TriggerItemsReset() ← GameSyncManager / GameController | ItemManager | アイテム状態リセット (権限側再活性) |
+| OnItemsSceneReloaded | TriggerItemsSceneReloaded() ← シーンロード完了箇所 | ItemManager(再カウント) | Additive ItemsScene 遅延カウント |
+| OnHardResetRequested | TriggerHardResetRequested() ← GameSyncManager RPC / NetworkGameManager | 全マネージャ(HardResetRoutine) | 全クライアント同時再初期化 |
+| OnHardResetPreCleanup | TriggerHardResetPreCleanup() ← HardResetRoutine 直前 | 各マネージャ(購読解除/停止) | Runner.Shutdown 前の整理 |
+
+補足:
+- 発火元は「ゲーム進行(Controller)」「同期(RPC/SyncManager)」「エンティティ(PlayerAvatar)」の3層に分かれる。
+- Hard Reset 後は OnGameRestartExecution 系の旧ソフトリセット用途は最小化し、HardResetRequested を基軸に統一。
+- Score 関連は二重発火が起きても副作用を避ける idempotent 設計 (UI 上は上書きのみ)。
 
 ## 4. 各ソースコードの内容
 
@@ -162,6 +322,7 @@
     *   プレイヤー数の追跡。
     *   最も高いスコアを持つプレイヤー（勝者）を特定するロジック (`DetermineWinner`)。
     *   プレイヤーの入力状態の有効/無効化。
+*   **フォールバック機構**: `ContinuousPlayerCheck` によりネットワーク遅延で初期登録が漏れた `PlayerAvatar` を定期再スキャン。`pendingIdResolution` は `playerId==0` が後から確定したケースを再登録する救済リスト。`PruneNullEntries` は Destroy 済み参照を辞書から除去してゴーストを防止。安定後はこれらを DEBUG ビルド限定に縮小可能。
 
 
 
@@ -240,6 +401,14 @@
     *   プレイヤーの状態（例: 生存、死亡）を管理するロジック。
     *   スコアの加算や減算などのデータ操作メソッド。
 
+### `ServiceRefactorBaselineLogger.cs`
+* **役割**: リファクタ（Find→イベント/ServiceRegistry化）前後のタイミング差異を可視化するための計測コンポーネント。Hard Reset / 再スタートサイクルの状態遷移・クリック時刻・カウントダウン値をログ化し非対称挙動やレースを早期検出。
+* **購読イベント**: `OnGameStateChanged`, `OnPlayerClickedForRestart`, `OnCountdownUpdate`, `OnGameRestartExecution`, `OnGameEnd`。
+* **出力例**: サイクル番号 / 各プレイヤーのクリック遅延(ms) / end→wait / wait→inGame の時間差。
+* **実行順序**: `[DefaultExecutionOrder(-500)]` で早期購読し初期状態を逃さない。
+* **削除タイミング**: 安定化後（差異ログが常に許容範囲 or Hard Reset バリア導入後）。
+* **注意**: ログ量増大を避けるため本番ビルドでは無効化推奨。
+
 
 
 
@@ -271,6 +440,29 @@
     *   **`GameEvents.TriggerGameEnd()`**: `GameRuleProcessor.cs`がゲーム終了を`GameEvents`を通じて発火します。これにより、`GameController.cs`がゲームを終了状態に遷移させ、プレイヤーの入力を無効化します。
 3.  **`GameRuleProcessor.cs`**: ゲーム終了後、`GameRuleProcessor.cs`は`PlayerManager.cs`から最終的なスコア情報を取得し、勝者を決定します。
     *   **`GameEvents.TriggerWinnerDetermined(winnerId, winnerName, winnerScore)`**: `GameRuleProcessor.cs`が勝者決定の結果を`GameEvents`を通じて発火します。これにより、`GameUIManager.cs`などが勝者メッセージをUIに表示します。
+
+### 5.4. 勝敗決定後 → リスタート (Hard Reset) まで
+
+勝者表示後、再試合を開始するまでの詳細なイベント/処理フローは以下の通りです。
+
+| フェーズ | 発火主体 / 条件 | 呼ばれるメソッド / イベント | 主な処理 | 次状態 |
+|----------|-----------------|------------------------------|----------|--------|
+| 勝者表示 | GameRuleProcessor 勝者確定 | GameEvents.TriggerWinnerDetermined / TriggerGameEnd | 入力無効化 (PlayerManager.SetAllPlayersInputEnabled(false)) / UI 勝者文言 | GameOver |
+| 待機遷移 | GameController 内タイマー or 直接 | GameEvents.TriggerGameStateChanged(GameState.WaitingForRestart) | UI に再開クリック指示表示 / クリックフラグ初期化 | WaitingForRestart |
+| クリック検知 | 各クライアント UI (GameUIManager) | GameEvents.TriggerPlayerClickedForRestart(playerId) | ローカル一度だけ送信 / UI を「相手待ち」に変更 | WaitingForRestart |
+| 集約判定 | GameController (全員クリック済み確認) | (内部) 両クリック成立 → Hard Reset 要求 | Hard Reset RPC 発火 (GameSyncManager / NetworkGameManager) | HardResetRequested |
+| Hard Reset 通知 | GameSyncManager RPC / NetworkGameManager | GameEvents.TriggerHardResetRequested() | 全クライアントで HardResetRoutine 開始 | HardResetRoutine 実行中 |
+| クリーンアップ前フック | HardResetRoutine 冒頭 | GameEvents.TriggerHardResetPreCleanup() | 各マネージャ任意の購読解除/停止 | -- |
+| Runner シャットダウン | HardResetRoutine | NetworkRunner.Shutdown() | ネットワーク状態破棄 / ServiceRegistry.Clear / GameEvents.ClearAllHandlers | -- |
+| Bootstrap 再ロード | HardResetRoutine | SceneManager.LoadScene(Single) | 新シーン初期化 (GameLauncher 再生成) | WaitingForPlayers |
+| 再セッション開始 | GameLauncher | Runner.StartGame(GameMode.Shared) | 新しい PlayerRef 割り当て → stableId 1/2 マッピング復元 | WaitingForPlayers / Countdown |
+| アイテム再カウント | アイテム Additive シーンロード完了 | ItemManager.CountExistingItems() (sceneLoaded コールバック) | アイテム総数確定 / UI 初期化 | Countdown / InGame |
+| カウントダウン再開 | GameController (プレイヤー揃う) | GameEvents.TriggerGameStateChanged(CountdownToStart) / TriggerCountdownUpdate | 以前と同じ開始シーケンス | Countdown |
+
+補足:
+- HardResetRoutine 先頭で 1frame + 0.1s の猶予を入れ、Restart クリック RPC や HardResetRequested イベント伝播の取りこぼしを緩和。
+- Hard Reset 後は旧ソフトリセット (OnGameRestartExecution) は基本未使用で、完全再初期化に一本化。
+- stableId (1/2) は PlayerRef の累積増加を UI / ロジックから隠蔽し、再戦回数に依存しない一貫 ID を提供。
 
 このイベント駆動の仕組みにより、各コンポーネントは互いに直接依存することなく、柔軟かつ拡張性の高いゲームロジックを実現しています。
 
@@ -411,21 +603,11 @@ public class GameSyncManager : NetworkBehaviour
   - 対象ファイル: `PlayerAvatar.cs`, `GameSyncManager.cs`
 
 - **サーバー権限管理強化**
-  - `GameController.cs`でチート防止ロジック強化
-  - `ItemManager.cs`でサーバー側でのアイテム管理
-  - 対象ファイル: `GameController.cs`, `ItemManager.cs`, `PlayerAvatar.cs`
-
-#### B. 複雑なゲームモード
 - **バトルロワイヤルモード**
   - マップの段階的縮小システム
   - 生存者管理とエリミネーション
   - `GameRuleProcessor.cs`で複雑な勝利条件
-  - 新規クラス: `BattleRoyaleManager.cs`, `MapShrinkManager.cs`
-
-- **アビリティシステム実装**
-  - プレイヤー固有の特殊能力
   - クールダウン管理とネットワーク同期
-  - `PlayerAvatar.cs`大幅拡張または新規`AbilityManager.cs`作成
 
 ### 7.4. 専門レベル（ゲーム開発全般知識）
 
@@ -440,27 +622,15 @@ public class GameSyncManager : NetworkBehaviour
   - `GameLauncher.cs`でスキルベースマッチング
   - レーティングシステム実装
 
-#### B. データ永続化・解析
 - **プレイヤー統計保存**
   - 外部データベース（Firebase等）との統合
-  - `PlayerModel.cs`拡張でプレイヤー履歴管理
-  - ゲーム結果の永続化
-
-- **リアルタイム解析**
   - ゲームプレイデータ収集システム
   - `GameEvents.cs`拡張でイベント解析
-  - パフォーマンスメトリクス収集
-
 ### 7.5. 改造時の推奨手順
 
-1. **計画フェーズ**
-   - 既存の`GameEvents.cs`で必要なイベント追加検討
    - 影響を受けるクラスの洗い出し
    - ネットワーク同期が必要な要素の特定
-
-2. **実装フェーズ**
    - ローカル機能実装 → ネットワーク同期実装の順序
-   - `GameSyncManager.cs`へのRPC追加（ゲーム進行関連）
    - `PlayerAvatar.cs`へのRPC追加（プレイヤー固有機能）
 
 3. **テストフェーズ**
@@ -469,11 +639,69 @@ public class GameSyncManager : NetworkBehaviour
    - エッジケース（接続切断、再接続）のテスト
 
 ### 7.6. 改造時の注意点
-
 - **アーキテクチャの維持**: 責任分離の原則を維持し、適切なクラスに機能追加
 - **ネットワーク負荷**: RPC頻度とデータサイズの最適化
 - **後方互換性**: 既存のセーブデータやネットワークプロトコルとの互換性
 - **デバッグ**: `GameEvents.cs`のイベントログ活用でデバッグ効率化
+# C#イベントとActionの基礎・Unityでの使い方（初心者向け解説）
 
-この段階的なアプローチにより、学習曲線に沿った無理のないゲーム拡張が可能になります。
+このプロジェクトでは「イベント駆動型」の設計を多用しています。C#のイベント・デリゲート・Actionの基礎と、Unityでの実践的な使い方を簡単にまとめます。
+
+### 1. C#のイベント・デリゲートとは？
+
+- **デリゲート**は「関数の型」。関数を変数のように渡したり、リストにして複数呼び出したりできます。
+- **Action**は「戻り値なし」のデリゲート型。例：`Action<int>` は「int型を1つ受け取る関数」のリスト。
+- **event**キーワードは「外部から +=, -= で購読/解除できるが、発火はクラス内部だけ」の制約をつけたもの。
+
+#### 例：
+```csharp
+public event Action<int> OnScoreChanged;
+
+// 登録（購読）
+OnScoreChanged += MyScoreHandler;
+
+// 解除
+OnScoreChanged -= MyScoreHandler;
+
+// 発火（呼び出し）
+if (OnScoreChanged != null) OnScoreChanged(100);
+// または null条件演算子で
+OnScoreChanged?.Invoke(100);
+```
+
+### 2. Unityでのイベント活用パターン
+
+- **ゲーム進行通知**：`GameEvents.OnGameStateChanged += ...` で状態変化をUIや他マネージャに伝える
+- **プレイヤー登録通知**：`PlayerManager.OnPlayerRegistered += ...` で新規プレイヤー出現時にUIやアイテム管理を更新
+- **UI更新**：`OnScoreChanged` でスコア表示を自動更新
+
+#### Unityでよく使う書き方
+```csharp
+// 1. イベント定義
+public event Action OnSomethingHappened;
+public event Action<int, string> OnDataChanged;
+
+// 2. イベント購読（StartやAwakeで）
+OnSomethingHappened?.Invoke();
+OnDataChanged?.Invoke(42, "Alice");
+
+// 4. イベント解除（OnDestroyや終了時）
+myManager.OnSomethingHappened -= HandleSomething;
+```
+
+### 3. よくあるミスと注意点
+
+- **解除忘れ**：イベント購読したら必ずOnDestroy等で解除（メモリリーク・多重発火防止）
+- **nullチェック**：`?.Invoke()` で購読者がいない時も安全
+- **+=の重複**：同じハンドラを何度も+=すると複数回呼ばれる→`-=`してから`+=`が安全
+- `GameEvents.OnPlayerScoreChanged += UpdatePlayerScoreUI;` … スコアが変わったらUIを自動更新
+- `ServiceRegistry.OnAnyRegistered += HandleServiceRegistered;` … 遅延生成されたマネージャを検知して依存を解決
+
+### 5. まとめ
+イベントは「何かが起きたら通知する」仕組み。Action/デリゲート/イベントを使うことで、
+・クラス同士が直接参照しなくても連携できる
+・後から購読/解除が柔軟にできる
+・ゲーム進行やUI更新の自動化が簡単になる
+
+Unity+C#のイベントは「疎結合・拡張性・保守性」を高める基本テクニックです。
 

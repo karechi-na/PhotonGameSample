@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using Fusion;
@@ -44,7 +44,6 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
         Debug.Log($"Player {player.PlayerId} joined the game.");
         // クライアントのJoin時の処理を呼び出す
         OnJoindClient?.Invoke(runner, player, runner.IsSharedModeMasterClient);
-            
     }
     void INetworkRunnerCallbacks.OnPlayerLeft(NetworkRunner runner, PlayerRef player) { }
     void INetworkRunnerCallbacks.OnInput(NetworkRunner runner, NetworkInput input) { }
@@ -60,6 +59,18 @@ public class GameLauncher : MonoBehaviour, INetworkRunnerCallbacks
     void INetworkRunnerCallbacks.OnHostMigration(NetworkRunner runner, HostMigrationToken hostMigrationToken) { }
     void INetworkRunnerCallbacks.OnReliableDataReceived(NetworkRunner runner, PlayerRef player, ReliableKey key, ArraySegment<byte> data) { }
     void INetworkRunnerCallbacks.OnReliableDataProgress(NetworkRunner runner, PlayerRef player, ReliableKey key, float progress) { }
-    void INetworkRunnerCallbacks.OnSceneLoadDone(NetworkRunner runner) { }
-    void INetworkRunnerCallbacks.OnSceneLoadStart(NetworkRunner runner) { }
+    // Fusion シーンロード完了時
+    void INetworkRunnerCallbacks.OnSceneLoadDone(NetworkRunner runner)
+    {
+        Debug.Log("GameLauncher: OnSceneLoadDone");
+        var ngm = FindFirstObjectByType<NetworkGameManager>();
+        if (ngm != null)
+        {
+            ngm.OnRunnerSceneLoadDone(runner);
+        }
+    }
+    void INetworkRunnerCallbacks.OnSceneLoadStart(NetworkRunner runner)
+    {
+        Debug.Log("GameLauncher: OnSceneLoadStart");
+    }
 }

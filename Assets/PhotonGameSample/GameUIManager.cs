@@ -1,11 +1,8 @@
-using UnityEngine;
+﻿using UnityEngine;
 using TMPro;
 using System.Collections.Generic;
+using PhotonGameSample.Infrastructure; // 追加
 
-/// <summary>
-/// ゲームのUI表示全般（スコア、状態メッセージ、カウントダウン等）を管理するクラス。
-/// ゲーム進行に応じたUI更新やイベント購読を担当します。
-/// </summary>
 public class GameUIManager : MonoBehaviour
 {
     [SerializeField] private TextMeshProUGUI statusWindow;
@@ -15,6 +12,11 @@ public class GameUIManager : MonoBehaviour
     [SerializeField] private TextMeshProUGUI player2ScoreText;
 
     private Dictionary<int, TextMeshProUGUI> playerScoreTexts = new Dictionary<int, TextMeshProUGUI>();
+    
+    // 参照（フォールバック用）
+    private NetworkGameManager networkGameManager;
+    private GameSyncManager gameSyncManager;
+    private PlayerManager playerManager; // ServiceRegistry 経由取得優先
     private bool winnerMessageDisplayed = false; // 勝者メッセージが表示されているかのフラグ
     private bool isWaitingForRestart = false; // 再開待ち状態のフラグ
     private bool hasClickedForRestart = false; // 自分がクリックしたかのフラグ
@@ -22,13 +24,25 @@ public class GameUIManager : MonoBehaviour
     // デバッグ用：UpdatePlayerScoreUI呼び出し回数をトラッキング
     private int updateScoreUICallCount = 0;
 
-    /// <summary>
-    /// UIの初期化処理を行います。
-    /// </summary>
     void Awake()
     {
         // UIの辞書を初期化
         InitializePlayerScoreTexts();
+        ServiceRegistry.Register<GameUIManager>(this); // フェーズ1登録
+
+    // 参照の取得（ServiceRegistry 優先 / 無ければフォールバック）
+    playerManager = ServiceRegistry.GetOrNull<PlayerManager>() ?? FindFirstObjectByType<PlayerManager>();
+    networkGameManager = ServiceRegistry.GetOrNull<NetworkGameManager>() ?? FindFirstObjectByType<NetworkGameManager>();
+    gameSyncManager = ServiceRegistry.GetOrNull<GameSyncManager>() ?? FindFirstObjectByType<GameSyncManager>();
+
+    // 遅延登録対応
+    ServiceRegistry.OnAnyRegistered += HandleServiceRegistered;
+
+        // GameSyncManager のスポーン通知を受けて参照を更新
+        if (networkGameManager != null)
+        {
+            networkGameManager.OnGameSyncManagerSpawned += OnGameSyncManagerSpawned;
+        }
 
         // イベント購読
         GameEvents.OnGameStateChanged += UpdateStatusWindow;
@@ -39,18 +53,12 @@ public class GameUIManager : MonoBehaviour
         GameEvents.OnCountdownUpdate += DisplayCountdown; // カウントダウン表示
     }
 
-    /// <summary>
-    /// UIの初期状態を設定します。
-    /// </summary>
     void Start()
     {
         // 初期UIの状態を設定
         UpdateStatusWindow(GameState.WaitingForPlayers);
     }
     
-    /// <summary>
-    /// 毎フレームUIの状態を更新します。
-    /// </summary>
     void Update()
     {
         // ゲーム再開待ち状態でクリックを検知（一度だけ）
@@ -60,9 +68,6 @@ public class GameUIManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// プレイヤースコアUIの辞書を初期化します。
-    /// </summary>
     private void InitializePlayerScoreTexts()
     {
         // SerializeFieldで設定されたプレイヤースコアUIを辞書に登録
@@ -71,28 +76,39 @@ public class GameUIManager : MonoBehaviour
             playerScoreTexts[1] = player1ScoreText;
             player1ScoreText.text = "Player1 Score: 0";
         }
+        else
+        {
+            Debug.LogWarning("GameUIManager: Player1 score text is not assigned!");
+        }
 
         if (player2ScoreText != null)
         {
             playerScoreTexts[2] = player2ScoreText;
             player2ScoreText.text = "Player2 Score: 0";
         }
+        else
+        {
+            Debug.LogWarning("GameUIManager: Player2 score text is not assigned!");
+        }
+        
+        Debug.Log($"GameUIManager: Initialized {playerScoreTexts.Count} player score UI elements");
     }
 
-    /// <summary>
-    /// ゲーム状態に応じてステータスウィンドウを更新します。
-    /// </summary>
-    /// <param name="newState">新しいゲーム状態</param>
     private void UpdateStatusWindow(GameState newState)
     {
+        Debug.Log($"GameUIManager: UpdateStatusWindow called with state: {newState}");
+        Debug.Log($"GameUIManager: winnerMessageDisplayed = {winnerMessageDisplayed}");
+        
         if (statusWindow == null)
         {
+            Debug.LogError("GameUIManager: statusWindow is null!");
             return;
         }
 
         // 勝者メッセージが表示されている場合は、ゲーム状態の更新を無視
         if (winnerMessageDisplayed)
         {
+            Debug.Log("GameUIManager: Ignoring state update - winner message is displayed");
             return;
         }
 
@@ -100,28 +116,30 @@ public class GameUIManager : MonoBehaviour
         {
             case GameState.WaitingForPlayers:
                 statusWindow.text = "Waiting for players...";
+                Debug.Log("GameUIManager: Set text to 'Waiting for players...'");
                 break;
             case GameState.CountdownToStart:
                 // カウントダウン中はカウントダウン表示が優先される
+                Debug.Log("GameUIManager: CountdownToStart state - waiting for countdown display");
                 break;
             case GameState.InGame:
                 statusWindow.text = "Game is running";
+                Debug.Log("GameUIManager: Set text to 'Game is running'");
                 break;
             case GameState.GameOver:
                 // ゲーム終了時は勝者メッセージが先に表示されるべきなので、
                 // ここでは何も表示しない
+                Debug.Log("GameUIManager: GameOver state - waiting for winner message");
                 break;
             case GameState.WaitingForRestart:
                 statusWindow.text = "Click anywhere to restart game";
                 isWaitingForRestart = true;
+                hasClickedForRestart = false; // 新しい再開待ちで毎回リセット
+                Debug.Log("GameUIManager: Set text to 'Click anywhere to restart game'");
                 break;
         }
     }
 
-    /// <summary>
-    /// プレイヤー数に応じて待機状態を更新します。
-    /// </summary>
-    /// <param name="playerCount">現在のプレイヤー数</param>
     private void UpdateWaitingStatus(int playerCount)
     {
         // GameControllerからの参照を持つか、GameEventsを経由して現在の状態を取得
@@ -131,10 +149,6 @@ public class GameUIManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// プレイヤーのスコアUIを作成します。
-    /// </summary>
-    /// <param name="playerId">プレイヤーID</param>
     private void CreatePlayerScoreUI(int playerId)
     {
         if (playerScoreTexts.ContainsKey(playerId))
@@ -157,14 +171,14 @@ public class GameUIManager : MonoBehaviour
         {
             playerScoreTexts[playerId] = scoreText;
             scoreText.text = $"Player{playerId} Score: 0";
+            Debug.Log($"GameUIManager: Registered score UI for Player {playerId}");
+        }
+        else
+        {
+            Debug.LogError($"GameUIManager: No SerializeField reference found for Player {playerId}!");
         }
     }
 
-    /// <summary>
-    /// プレイヤーのスコアUIを更新します。
-    /// </summary>
-    /// <param name="playerId">プレイヤーID</param>
-    /// <param name="newScore">新しいスコア</param>
     private void UpdatePlayerScoreUI(int playerId, int newScore)
     {
         updateScoreUICallCount++;
@@ -175,6 +189,7 @@ public class GameUIManager : MonoBehaviour
         }
         else
         {
+            Debug.LogWarning($"GameUIManager: No UI text found for Player {playerId}");
             // UI作成を試みる
             CreatePlayerScoreUI(playerId);
             
@@ -186,10 +201,6 @@ public class GameUIManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 勝者メッセージを表示します。
-    /// </summary>
-    /// <param name="message">勝者メッセージ</param>
     private void DisplayWinnerMessage(string message)
     {
         if (statusWindow != null)
@@ -200,11 +211,13 @@ public class GameUIManager : MonoBehaviour
             // 3秒後に再開待ち状態に移行
             StartCoroutine(ShowRestartMessageAfterDelay());
         }
+        else
+        {
+            Debug.LogError("GameUIManager: statusWindow is null!");
+        }
     }
     
-    /// <summary>
-    /// 勝者メッセージ表示後、一定時間後に再開メッセージを表示します。
-    /// </summary>
+    // 勝者メッセージ表示後、一定時間後に再開メッセージを表示
     private System.Collections.IEnumerator ShowRestartMessageAfterDelay()
     {
         yield return new WaitForSeconds(3f);
@@ -216,104 +229,180 @@ public class GameUIManager : MonoBehaviour
         }
     }
     
-    /// <summary>
-    /// ゲーム再開要求を送信します。
-    /// </summary>
+    // ゲーム再開要求
     private void RequestGameRestart()
     {
+        Debug.Log("=== GameUIManager: RequestGameRestart() called ===");
+        Debug.Log($"GameUIManager: TIMESTAMP: {System.DateTime.Now:HH:mm:ss.fff}");
+        Debug.Log($"GameUIManager: isWaitingForRestart = {isWaitingForRestart}");
+        Debug.Log($"GameUIManager: hasClickedForRestart = {hasClickedForRestart}");
+        
         if (isWaitingForRestart && !hasClickedForRestart)
         {
             hasClickedForRestart = true;
+            Debug.Log("GameUIManager: Setting hasClickedForRestart = true");
             
             // ローカルプレイヤーのIDを取得
             int localPlayerId = GetLocalPlayerId();
+            Debug.Log($"GameUIManager: GetLocalPlayerId() returned: {localPlayerId}");
             
             if (localPlayerId > 0)
             {
-                // ローカルプレイヤーのPlayerAvatarを取得してRPCを送信
-                PlayerAvatar localPlayer = GetLocalPlayerAvatar();
+                Debug.Log($"GameUIManager: Local player {localPlayerId} clicked for restart");
                 
-                if (localPlayer != null)
+                // まずは GameSyncManager 経由でマスターに集約
+                if (gameSyncManager == null)
                 {
-                    localPlayer.NotifyRestartClick();
+                    // 遅延スポーン対策でクリック時に再解決
+                    gameSyncManager = FindFirstObjectByType<GameSyncManager>();
+                    Debug.Log($"GameUIManager: Lazy-resolved GameSyncManager: {(gameSyncManager != null)}");
+                }
+
+                if (gameSyncManager != null)
+                {
+                    Debug.Log($"GameUIManager: Using GameSyncManager.RequestRestartClick({localPlayerId})");
+                    gameSyncManager.RequestRestartClick(localPlayerId);
                 }
                 else
                 {
-                    // フォールバック：直接GameEventsを使用（ローカルのみ）
-                    GameEvents.TriggerPlayerClickedForRestart(localPlayerId);
+                    // 次にローカル PlayerAvatar RPC を試す
+                    PlayerAvatar localPlayer = GetLocalPlayerAvatar();
+                    Debug.Log($"GameUIManager: GameSyncManager not found. GetLocalPlayerAvatar() returned: {(localPlayer != null ? $"Player {localPlayer.playerId}" : "null")}");
+                    if (localPlayer != null)
+                    {
+                        localPlayer.RPC_NotifyPlayerClickForRestart();
+                        Debug.Log($"GameUIManager: Called RPC_NotifyPlayerClickForRestart on Player {localPlayer.playerId}");
+                    }
+                    else
+                    {
+                        // 最後のフォールバック：ローカルのみイベント発火
+                        Debug.LogWarning("GameUIManager: No GameSyncManager/PlayerAvatar found - using local GameEvents fallback");
+                        GameEvents.TriggerPlayerClickedForRestart(localPlayerId);
+                    }
                 }
                 
                 // UI表示を更新
                 if (statusWindow != null)
                 {
                     statusWindow.text = "Waiting for other players to click...";
+                    Debug.Log("GameUIManager: Updated UI to 'Waiting for other players to click...'");
                 }
             }
             else
             {
+                Debug.LogError("GameUIManager: Could not determine local player ID for restart");
                 // クリックフラグをリセット（再試行可能にする）
                 hasClickedForRestart = false;
             }
         }
+        else
+        {
+            Debug.Log($"GameUIManager: RequestGameRestart conditions not met - isWaitingForRestart: {isWaitingForRestart}, hasClickedForRestart: {hasClickedForRestart}");
+        }
+    }
+
+    // NetworkGameManager からの GameSyncManager スポーン通知
+    private void OnGameSyncManagerSpawned(GameSyncManager spawned)
+    {
+        gameSyncManager = spawned;
+        Debug.Log("GameUIManager: OnGameSyncManagerSpawned - GameSyncManager reference updated");
     }
     
-    /// <summary>
-    /// ローカルプレイヤーのIDを取得します。
-    /// </summary>
-    /// <returns>ローカルプレイヤーのID</returns>
+    // ローカルプレイヤーのIDを取得
     private int GetLocalPlayerId()
     {
-        // StateAuthorityを持つPlayerAvatarを探す
-        PlayerAvatar[] allPlayers = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
-        
-        foreach (var player in allPlayers)
+        // PlayerManager を優先
+        if (playerManager != null)
         {
-            if (player != null)
+            foreach (var kv in playerManager.AllPlayers)
             {
-                if (player.HasStateAuthority)
+                var av = kv.Value;
+                if (av != null && av.HasInputAuthority)
                 {
-                    return player.playerId;
+                    Debug.Log($"GameUIManager: Local player via PlayerManager -> {av.playerId}");
+                    return av.playerId;
                 }
             }
         }
-        
-        // 見つからない場合は-1を返す
+
+        // シーン探索はフォールバック (将来的に削除予定)
+        PlayerAvatar[] allPlayers = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
+        foreach (var p in allPlayers)
+        {
+            if (p != null && p.HasInputAuthority)
+            {
+                Debug.Log($"GameUIManager: Local player via scene scan -> {p.playerId}");
+                return p.playerId;
+            }
+        }
+
+        if (networkGameManager != null && networkGameManager.NetworkRunner != null)
+        {
+            int rid = networkGameManager.NetworkRunner.LocalPlayer.PlayerId;
+            if (rid > 0)
+            {
+                Debug.Log($"GameUIManager: Local player via NetworkRunner -> {rid}");
+                return rid;
+            }
+        }
+
+        Debug.LogError("GameUIManager: Local player id not resolved");
         return -1;
     }
 
-    /// <summary>
-    /// カウントダウンを表示します。
-    /// </summary>
-    /// <param name="remainingSeconds">残り秒数</param>
+    // カウントダウン表示
     private void DisplayCountdown(int remainingSeconds)
     {
+        Debug.Log($"GameUIManager: DisplayCountdown called with {remainingSeconds} seconds");
+        
         if (statusWindow != null)
         {
             statusWindow.text = $"Game starting in {remainingSeconds}...";
+            Debug.Log($"GameUIManager: Set countdown text to 'Game starting in {remainingSeconds}...'");
+        }
+        else
+        {
+            Debug.LogError("GameUIManager: statusWindow is null in DisplayCountdown!");
         }
     }
 
-    /// <summary>
-    /// ローカルプレイヤーのPlayerAvatarを取得します。
-    /// </summary>
-    /// <returns>ローカルプレイヤーのPlayerAvatar</returns>
+    // ローカルプレイヤーのPlayerAvatarを取得
     private PlayerAvatar GetLocalPlayerAvatar()
     {
-        PlayerAvatar[] allPlayers = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
-        
-        foreach (var player in allPlayers)
+        if (playerManager != null)
         {
-            if (player != null && player.HasStateAuthority)
+            foreach (var kv in playerManager.AllPlayers)
             {
-                return player;
+                var av = kv.Value;
+                if (av != null && av.HasInputAuthority) return av;
             }
+        }
+        // フォールバック
+        var scan = FindObjectsByType<PlayerAvatar>(FindObjectsSortMode.None);
+        foreach (var av in scan)
+        {
+            if (av != null && av.HasInputAuthority) return av;
         }
         return null;
     }
+
+    private void HandleServiceRegistered(System.Type type, object inst)
+    {
+        if (type == typeof(PlayerManager) && playerManager == null)
+        {
+            playerManager = (PlayerManager)inst;
+        }
+        else if (type == typeof(GameSyncManager) && gameSyncManager == null)
+        {
+            gameSyncManager = (GameSyncManager)inst;
+        }
+        else if (type == typeof(NetworkGameManager) && networkGameManager == null)
+        {
+            networkGameManager = (NetworkGameManager)inst;
+        }
+    }
     
-    /// <summary>
-    /// 勝者メッセージ表示フラグをリセットします。
-    /// </summary>
+    // 勝者メッセージフラグをリセット（ゲーム再開時に使用）
     public void ResetWinnerMessageFlag()
     {
         winnerMessageDisplayed = false;
@@ -323,11 +412,16 @@ public class GameUIManager : MonoBehaviour
 
     void OnDestroy()
     {
+        if (networkGameManager != null)
+        {
+            networkGameManager.OnGameSyncManagerSpawned -= OnGameSyncManagerSpawned;
+        }
         GameEvents.OnGameStateChanged -= UpdateStatusWindow;
         GameEvents.OnPlayerScoreChanged -= UpdatePlayerScoreUI;
         GameEvents.OnWinnerDetermined -= DisplayWinnerMessage;
         GameEvents.OnPlayerCountChanged -= UpdateWaitingStatus;
         GameEvents.OnPlayerRegistered -= CreatePlayerScoreUI;
         GameEvents.OnCountdownUpdate -= DisplayCountdown;
+    ServiceRegistry.OnAnyRegistered -= HandleServiceRegistered;
     }
 }

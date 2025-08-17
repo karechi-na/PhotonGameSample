@@ -45,6 +45,13 @@ public static class GameEvents
     // アイテムリセットイベント（RPC経由）
     public static event Action OnItemsReset;
 
+    // アイテムシーン再ロード完了イベント（シーン再ロード型リスタート用）
+    public static event Action OnItemsSceneReloaded;
+    // ハードリセット要求（全ランタイム破棄→再起動）
+    public static event Action OnHardResetRequested;
+    // ハードリセット直前フック（クリーンアップ用）
+    public static event Action OnHardResetPreCleanup;
+
     // --- イベント登録/解除用ラッパー ---
     public static void AddGameStateChangedListener(Action<GameState> listener)
     {
@@ -137,6 +144,48 @@ public static class GameEvents
     {
         AppendTrace("[Event発火] OnItemsReset()");
         OnItemsReset?.Invoke();
+    }
+
+    public static void TriggerItemsSceneReloaded()
+    {
+        AppendTrace("[Event発火] OnItemsSceneReloaded()");
+        OnItemsSceneReloaded?.Invoke();
+    }
+
+    public static void TriggerHardResetRequested()
+    {
+        AppendTrace("[Event発火] OnHardResetRequested()");
+        OnHardResetRequested?.Invoke();
+    }
+
+    public static void TriggerHardResetPreCleanup()
+    {
+        AppendTrace("[Event発火] OnHardResetPreCleanup()");
+        OnHardResetPreCleanup?.Invoke();
+    }
+
+    /// <summary>
+    /// すべてのイベントハンドラをクリア（ハードリセット時用）
+    /// </summary>
+    public static void ClearAllHandlers()
+    {
+        OnGameStateChanged = null;
+        OnPlayerScoreChanged = null;
+        OnWinnerDetermined = null;
+        OnPlayerCountChanged = null;
+        OnPlayerRegistered = null;
+        OnGameEnd = null;
+        OnScoreUpdateCompleted = null;
+        OnCountdownUpdate = null;
+        OnGameRestartRequested = null;
+        OnGameRestartExecution = null;
+        OnPlayerClickedForRestart = null;
+        OnPlayerInputStateChanged = null;
+        OnItemsReset = null;
+        OnItemsSceneReloaded = null;
+        OnHardResetRequested = null;
+        OnHardResetPreCleanup = null;
+        AppendTrace("[Event] Cleared all handlers");
     }
 
     // --- TraceWindowへの追記ユーティリティ ---

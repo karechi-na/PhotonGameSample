@@ -979,9 +979,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   playerAvatarPrefab: {fileID: 4742052467818878735, guid: 41e87f1b1a9234846bf578b3ec71a01a, type: 3}
+  gameSyncManagerPrefab: {fileID: 1099121549599972275, guid: fff66ba2ee74a65418f9647f8fe1812b, type: 3}
   spawnPositions:
   - {x: -5, y: 2, z: 0}
   - {x: 5, y: 2, z: 0}
+  itemsSceneName: ItemsScene
+  itemsSceneBuildIndex: 1
+  useSceneReloadRestart: 1
+  useFullReloadRestart: 1
+  bootstrapSceneName: PhotonGameSample
 --- !u!114 &1092109763
 MonoBehaviour:
   m_ObjectHideFlags: 0

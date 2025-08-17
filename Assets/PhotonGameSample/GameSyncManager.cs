@@ -1,5 +1,6 @@
+﻿using UnityEngine;
 using Fusion;
-using UnityEngine;
+using PhotonGameSample.Infrastructure; // 追加
 
 /// <summary>
 /// ゲーム進行同期管理クラス
@@ -8,6 +9,20 @@ using UnityEngine;
 /// </summary>
 public class GameSyncManager : NetworkBehaviour
 {
+    private void Awake()
+    {
+        ServiceRegistry.Register<GameSyncManager>(this); // フェーズ1登録
+    }
+    
+    /// <summary>
+    /// 任意のクライアントからマスターへ「再開クリック」を要求する（集約用）
+    /// </summary>
+    public void RequestRestartClick(int playerId)
+    {
+        Debug.Log($"GameSyncManager: RequestRestartClick from client for player {playerId}");
+        RPC_RequestRestartClick(playerId);
+    }
+
     /// <summary>
     /// 再開クリックを全クライアントに同期
     /// </summary>
@@ -39,9 +54,17 @@ public class GameSyncManager : NetworkBehaviour
     /// </summary>
     public void NotifyGameStateChanged(GameState newState)
     {
+        Debug.Log($"GameSyncManager: NotifyGameStateChanged called with state: {newState}");
+        Debug.Log($"GameSyncManager: HasStateAuthority = {HasStateAuthority}");
+        
         if (HasStateAuthority)
         {
+            Debug.Log($"GameSyncManager: Sending RPC_NotifyGameStateChanged({newState})");
             RPC_NotifyGameStateChanged(newState);
+        }
+        else
+        {
+            Debug.LogWarning($"GameSyncManager: Cannot send RPC - no state authority");
         }
     }
     
@@ -66,6 +89,17 @@ public class GameSyncManager : NetworkBehaviour
             RPC_NotifyGameRestart();
         }
     }
+
+    /// <summary>
+    /// ハードリセットを全クライアントに通知（Runner 全面再初期化用）
+    /// </summary>
+    public void NotifyHardReset()
+    {
+        if (HasStateAuthority)
+        {
+            RPC_NotifyHardReset();
+        }
+    }
     
     /// <summary>
     /// アイテムリセット通知を全クライアントに同期
@@ -81,6 +115,19 @@ public class GameSyncManager : NetworkBehaviour
     // =============================================================================
     // RPC メソッド群
     // =============================================================================
+    /// <summary>
+    /// RPC: 再開クリックをマスター（StateAuthority）に要求（全クライアント→マスター）
+    /// マスターは自分でイベント発火し、他クライアントへは通知RPCを配信
+    /// </summary>
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    private void RPC_RequestRestartClick(int clickedPlayerId)
+    {
+        Debug.Log($"GameSyncManager: RPC_RequestRestartClick received on master for player {clickedPlayerId}");
+        // マスターで集約
+        GameEvents.TriggerPlayerClickedForRestart(clickedPlayerId);
+        // 他クライアントに通知（自分は HasStateAuthority なので RPC_NotifyRestartClick 内でスキップされる）
+        RPC_NotifyRestartClick(clickedPlayerId);
+    }
     
     /// <summary>
     /// RPC: プレイヤーの再開クリックを全クライアントに通知
@@ -103,6 +150,7 @@ public class GameSyncManager : NetworkBehaviour
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
     private void RPC_NotifyCountdownUpdate(int remainingSeconds)
     {
+        Debug.Log($"GameSyncManager: RPC_NotifyCountdownUpdate received with remainingSeconds: {remainingSeconds}");
         GameEvents.TriggerCountdownUpdate(remainingSeconds);
     }
     
@@ -112,7 +160,10 @@ public class GameSyncManager : NetworkBehaviour
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
     private void RPC_NotifyGameStateChanged(GameState newState)
     {
+        Debug.Log($"GameSyncManager: RPC_NotifyGameStateChanged received with state: {newState}");
+        Debug.Log($"GameSyncManager: HasStateAuthority = {HasStateAuthority}, triggering GameEvents.TriggerGameStateChanged({newState})");
         GameEvents.TriggerGameStateChanged(newState);
+        Debug.Log($"GameSyncManager: GameEvents.TriggerGameStateChanged({newState}) completed");
     }
     
     /// <summary>
@@ -131,6 +182,15 @@ public class GameSyncManager : NetworkBehaviour
     private void RPC_NotifyGameRestart()
     {
         GameEvents.TriggerGameRestartExecution();
+    }
+
+    /// <summary>
+    /// RPC: ハードリセット要求を全クライアントへ送信
+    /// </summary>
+    [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+    private void RPC_NotifyHardReset()
+    {
+        GameEvents.TriggerHardResetRequested();
     }
     
     /// <summary>

@@ -1,9 +1,9 @@
-using UnityEngine;
+﻿using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
-[RequireComponent(typeof(PlayerManager))]
+[RequireComponent(typeof(PlayerManager), typeof(ItemManager))]
 public class GameRuleProcessor : MonoBehaviour
 {
     // イベントの発火
@@ -27,10 +27,7 @@ public class GameRuleProcessor : MonoBehaviour
         playerManager = GetComponent<PlayerManager>();
 
         // ItemManagerからのイベント購読（全アイテム収集時）
-        if (GetComponent<ItemManager>() != null) // GetComponentで取得するか、SerializeFieldでアサイン
-        {
-            GetComponent<ItemManager>().OnAllItemsCollected += TriggerGameEndByRule;
-        }
+        GetComponent<ItemManager>().OnAllItemsCollected += TriggerGameEndByRule;
 
         // GameControllerからのゲーム終了イベント購読
         GameEvents.OnGameEnd += HandleGameEndedByController;
