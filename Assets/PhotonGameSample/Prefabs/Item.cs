@@ -10,7 +10,12 @@ public class Item : NetworkBehaviour // NetworkBehaviourを継承します
     private Vector3 startPosition;
     private Vector3 endPosition;
     public float speed = 1.0f;
-    [SerializeField]public int itemValue { get; private set; } = 1;  // アイテムの値を定義します
+    //[SerializeField]public int itemValue { get; private set; } = 1;  // アイテムの値を定義します
+
+    [SerializeField] 
+    protected int _itemValue = 1;
+    public virtual int itemValue => _itemValue;
+
     [SerializeField] private Vector3 target = Vector3.forward * 5.0f;
 
     // 位置をネットワークで同期
